@@ -80,7 +80,6 @@ export default function IncidentWorkspace() {
   async function reconstruct() {
     setLoading(true);
     setApiError('');
-    setContext(null);
     try {
       const next = await api.reconstruct({
         incident_id: incidentId,

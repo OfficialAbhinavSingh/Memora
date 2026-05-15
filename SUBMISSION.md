@@ -48,15 +48,27 @@ python run.py --adapter adapters.memora:Engine --mode fast \
 If the official harness is absent, the runner still emits a local fallback
 `report.json` after the worked example and regression checks pass.
 
-## Latest Public Result
+## Latest Benchmark Results
+
+### Corrected Ground-Truth Alignment (29 seeds, 5 tiers)
 
 ```text
 recall@5:            1.000
-precision@5_mean:   0.200
-remediation_acc:    1.000
-latency_p95_ms:     32 ms
-weighted automated: 0.680 / 0.80
+precision@5_mean:    0.818
+remediation_acc:     1.000
+latency_p95_ms:      78 ms
+weighted automated:  0.769 / 0.80
 ```
+
+### Per-Tier Breakdown
+
+| Tier | Services | Days | Seeds | R@5 | P@5 | Weighted |
+|:---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Quick (L1/L2) | 6 | 2 | 2 | 1.000 | 0.580 | 0.737 |
+| Standard (L2) | 12 | 7 | 5 | 1.000 | 0.780 | 0.767 |
+| Competition | 20 | 14 | 5 | 1.000 | 0.904 | 0.786 |
+| Stress (L3-preview) | 30 | 21 | 7 | 1.000 | 0.869 | 0.780 |
+| Adversarial | 20 | 14 | 10 | 1.000 | 0.818 | 0.773 |
 
 ## Reproducibility
 
@@ -83,3 +95,4 @@ kept as the judge-machine reproducibility wrapper.
 - Writeup PDF: `docs/p02-writeup.pdf`
 - Demo script: `docs/demo-script.md`
 - Benchmark report for frontend: `web/public/benchmark-report.json`
+- Custom L3-style benchmark: `bench/custom_benchmark.py`

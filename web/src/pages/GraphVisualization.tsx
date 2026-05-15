@@ -105,7 +105,6 @@ function CausalGraph({ chain, active }: { chain: CausalChain; active: boolean })
 // ── Similar Incidents Radial Graph ──
 function SimilarGraph({ graph }: { graph: SimGraph }) {
   const W = 360, H = 300, cx = W / 2, cy = H / 2;
-  const query = graph.nodes.find(n => n.type === 'query')!;
   const matches = graph.nodes.filter(n => n.type === 'match');
   const mPos: Record<string, { x: number; y: number }> = {};
   matches.forEach((m, i) => {

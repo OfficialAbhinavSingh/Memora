@@ -1,0 +1,18 @@
+groups:
+  - name: pce-context-api
+    rules:
+      - alert: PCEHighErrorRate
+        expr: sum(rate(pce_http_requests_total{status=~"5.."}[5m])) > 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: Persistent Context Engine is returning server errors.
+
+      - alert: PCENoTraffic
+        expr: sum(rate(pce_http_requests_total[10m])) == 0
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Persistent Context Engine has no observed request traffic.

@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-context-api
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-context-api
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-context-api
+    spec:
+      serviceAccountName: {{ .Release.Name }}-context-api
+      containers:
+        - name: context-api
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PCE_ADDR
+              value: {{ .Values.env.PCE_ADDR | quote }}
+            - name: PCE_API_KEY
+              value: {{ .Values.env.PCE_API_KEY | quote }}
+            - name: PCE_FAST_WINDOW
+              value: {{ .Values.env.PCE_FAST_WINDOW | quote }}
+            - name: PCE_DEEP_WINDOW
+              value: {{ .Values.env.PCE_DEEP_WINDOW | quote }}
+            - name: PCE_SIMILARITY_LOOKBACK
+              value: {{ .Values.env.PCE_SIMILARITY_LOOKBACK | quote }}
+            - name: PCE_READ_TIMEOUT
+              value: {{ .Values.env.PCE_READ_TIMEOUT | quote }}
+            - name: PCE_WRITE_TIMEOUT
+              value: {{ .Values.env.PCE_WRITE_TIMEOUT | quote }}
+            - name: PCE_SHUTDOWN_TIMEOUT
+              value: {{ .Values.env.PCE_SHUTDOWN_TIMEOUT | quote }}
+            - name: PCE_MAX_REQUEST_BYTES
+              value: {{ .Values.env.PCE_MAX_REQUEST_BYTES | quote }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /v1/readiness
+              port: 8080
+          livenessProbe:
+            httpGet:
+              path: /v1/health
+              port: 8080

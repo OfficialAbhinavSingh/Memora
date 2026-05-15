@@ -1,0 +1,232 @@
+openapi: 3.0.3
+info:
+  title: Persistent Context Engine API
+  version: 0.1.0
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+paths:
+  /v1/health:
+    get:
+      security: []
+      responses:
+        "200":
+          description: Service is alive
+  /v1/readiness:
+    get:
+      security: []
+      responses:
+        "200":
+          description: Service is ready
+  /v1/metrics:
+    get:
+      security: []
+      responses:
+        "200":
+          description: Prometheus text metrics
+  /v1/ingest/events:
+    post:
+      summary: Ingest normalized events
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IngestRequest"
+      responses:
+        "202":
+          description: Events accepted
+  /v1/context/reconstruct:
+    post:
+      summary: Reconstruct incident context
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReconstructRequest"
+      responses:
+        "200":
+          description: Reconstructed operational context
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Context"
+  /v1/incidents/{incident_id}/memory:
+    get:
+      summary: Return stored incident memory
+      parameters:
+        - name: incident_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Incident memory
+  /v1/feedback/remediation-outcome:
+    post:
+      summary: Record remediation feedback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeedbackRequest"
+      responses:
+        "202":
+          description: Feedback recorded
+  /v1/topology/alias:
+    post:
+      summary: Add or reinforce service alias lineage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AliasRequest"
+      responses:
+        "202":
+          description: Alias updated
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    Event:
+      type: object
+      required: [ts, kind, tenant_id, environment]
+      properties:
+        event_id:
+          type: string
+        ts:
+          type: string
+          format: date-time
+        kind:
+          type: string
+        tenant_id:
+          type: string
+        environment:
+          type: string
+        service_name:
+          type: string
+        canonical_service_id:
+          type: string
+        incident_id:
+          type: string
+        trace_id:
+          type: string
+        entities:
+          type: array
+          items:
+            type: string
+        attributes:
+          type: object
+          additionalProperties: true
+        raw_ref:
+          type: string
+        provenance:
+          type: object
+          additionalProperties: true
+    IngestRequest:
+      type: object
+      required: [events]
+      properties:
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/Event"
+    IncidentSignal:
+      type: object
+      required: [incident_id, ts, tenant_id, environment, trigger]
+      properties:
+        incident_id:
+          type: string
+        ts:
+          type: string
+          format: date-time
+        tenant_id:
+          type: string
+        environment:
+          type: string
+        service_name:
+          type: string
+        canonical_service_id:
+          type: string
+        trigger:
+          type: string
+    ReconstructRequest:
+      type: object
+      required: [signal]
+      properties:
+        signal:
+          $ref: "#/components/schemas/IncidentSignal"
+        mode:
+          type: string
+          enum: [fast, deep]
+    Context:
+      type: object
+      required: [related_events, causal_chain, similar_past_incidents, suggested_remediations, confidence, explain]
+      properties:
+        related_events:
+          type: array
+          items:
+            $ref: "#/components/schemas/Event"
+        causal_chain:
+          type: array
+          items:
+            type: object
+        similar_past_incidents:
+          type: array
+          items:
+            type: object
+        suggested_remediations:
+          type: array
+          items:
+            type: object
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        explain:
+          type: string
+    FeedbackRequest:
+      type: object
+      required: [incident_id, tenant_id, environment, action, target, outcome, observed_at]
+      properties:
+        incident_id:
+          type: string
+        tenant_id:
+          type: string
+        environment:
+          type: string
+        action:
+          type: string
+        target:
+          type: string
+        outcome:
+          type: string
+        observed_at:
+          type: string
+          format: date-time
+    AliasRequest:
+      type: object
+      required: [tenant_id, environment, from, to]
+      properties:
+        tenant_id:
+          type: string
+        environment:
+          type: string
+        from:
+          type: string
+        to:
+          type: string
+        observed_at:
+          type: string
+          format: date-time
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1

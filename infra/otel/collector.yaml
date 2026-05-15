@@ -1,0 +1,35 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+      http:
+
+processors:
+  batch:
+  resource:
+    attributes:
+      - key: deployment.environment
+        action: upsert
+        value: prod
+
+exporters:
+  kafka:
+    brokers:
+      - kafka:9092
+    topic: telemetry.raw
+    encoding: otlp_json
+
+service:
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [resource, batch]
+      exporters: [kafka]
+    metrics:
+      receivers: [otlp]
+      processors: [resource, batch]
+      exporters: [kafka]
+    traces:
+      receivers: [otlp]
+      processors: [resource, batch]
+      exporters: [kafka]

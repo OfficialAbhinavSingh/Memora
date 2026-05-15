@@ -1,0 +1,11 @@
+{
+  "mode": "fast",
+  "signal": {
+    "incident_id": "INC-714",
+    "ts": "2026-05-10T14:32:11Z",
+    "tenant_id": "demo",
+    "environment": "prod",
+    "service_name": "billing-svc",
+    "trigger": "alert:checkout-api/error-rate>5%"
+  }
+}

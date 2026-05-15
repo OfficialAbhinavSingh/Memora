@@ -1,0 +1,95 @@
+version: "3.9"
+
+services:
+  context-api:
+    build:
+      context: ./services/context-api
+    environment:
+      PCE_ADDR: ":8080"
+      PCE_FAST_WINDOW: "30m"
+      PCE_DEEP_WINDOW: "4h"
+      PCE_SIMILARITY_LOOKBACK: "720h"
+      PCE_MAX_REQUEST_BYTES: "4194304"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - kafka
+      - clickhouse
+      - neo4j
+      - postgres
+      - redis
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.104.0
+    command: ["--config=/etc/otelcol/collector.yaml"]
+    volumes:
+      - ./infra/otel/collector.yaml:/etc/otelcol/collector.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    depends_on:
+      - kafka
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    depends_on:
+      - zookeeper
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.6
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - ./infra/clickhouse/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+
+  neo4j:
+    image: neo4j:5.21
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/change-me-local
+    volumes:
+      - ./infra/neo4j/init.cypher:/var/lib/neo4j/import/init.cypher:ro
+
+  postgres:
+    image: postgres:16
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: pce
+      POSTGRES_PASSWORD: pce
+      POSTGRES_DB: pce
+    volumes:
+      - ./infra/postgres/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  minio:
+    image: minio/minio:RELEASE.2024-06-13T22-53-53Z
+    command: server /data --console-address ":9001"
+    ports:
+      - "9001:9000"
+      - "9002:9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio123

@@ -1,0 +1,64 @@
+{
+  "events": [
+    {
+      "ts": "2026-05-10T14:21:30Z",
+      "kind": "deploy",
+      "tenant_id": "demo",
+      "environment": "prod",
+      "service_name": "payments-svc",
+      "attributes": {
+        "version": "v2.14.0",
+        "actor": "ci"
+      }
+    },
+    {
+      "ts": "2026-05-10T14:22:01Z",
+      "kind": "log",
+      "tenant_id": "demo",
+      "environment": "prod",
+      "service_name": "checkout-api",
+      "trace_id": "abc123",
+      "entities": ["payments-svc"],
+      "attributes": {
+        "level": "error",
+        "msg": "timeout calling payments-svc"
+      }
+    },
+    {
+      "ts": "2026-05-10T14:22:01Z",
+      "kind": "metric",
+      "tenant_id": "demo",
+      "environment": "prod",
+      "service_name": "payments-svc",
+      "attributes": {
+        "name": "latency_p99_ms",
+        "value": 4820
+      }
+    },
+    {
+      "ts": "2026-05-10T14:30:00Z",
+      "kind": "topology",
+      "tenant_id": "demo",
+      "environment": "prod",
+      "attributes": {
+        "change": "rename",
+        "from": "payments-svc",
+        "to": "billing-svc"
+      }
+    },
+    {
+      "ts": "2026-05-10T15:10:00Z",
+      "kind": "remediation",
+      "tenant_id": "demo",
+      "environment": "prod",
+      "incident_id": "INC-714",
+      "service_name": "billing-svc",
+      "attributes": {
+        "action": "rollback",
+        "target": "billing-svc",
+        "version": "v2.13.4",
+        "outcome": "resolved"
+      }
+    }
+  ]
+}

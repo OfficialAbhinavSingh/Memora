@@ -71,3 +71,38 @@ func (r *statusRecorder) WriteHeader(status int) {
 	r.status = status
 	r.ResponseWriter.WriteHeader(status)
 }
+
+// withCORS wraps the handler with CORS response headers when
+// cfg.AllowedOrigins is non-empty. When the list is empty (the default,
+// same-domain Nginx deployment) this is a pure no-op passthrough.
+//
+// Only origins explicitly listed in PCE_ALLOWED_ORIGINS receive CORS headers,
+// so a wildcard is never emitted. OPTIONS preflight requests are answered with
+// 204 and do not reach the inner handler.
+func (h *Handler) withCORS(next http.Handler) http.Handler {
+	if len(h.cfg.AllowedOrigins) == 0 {
+		return next
+	}
+
+	allowed := make(map[string]struct{}, len(h.cfg.AllowedOrigins))
+	for _, o := range h.cfg.AllowedOrigins {
+		allowed[strings.ToLower(strings.TrimRight(o, "/"))] = struct{}{}
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if _, ok := allowed[strings.ToLower(strings.TrimRight(origin, "/"))]; ok {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-PCE-API-Key, X-Request-Id")
+			w.Header().Set("Access-Control-Max-Age", "3600")
+			w.Header().Vary("Origin")
+		}
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+

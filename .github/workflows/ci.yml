@@ -68,3 +68,5 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build context-api image
         run: docker build services/context-api -t pce/context-api:ci
+      - name: Build web-ui image
+        run: docker build web -t pce/web-ui:ci

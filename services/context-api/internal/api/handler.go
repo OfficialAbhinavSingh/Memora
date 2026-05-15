@@ -34,7 +34,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /v1/incidents/", h.getIncidentMemory)
 	mux.HandleFunc("POST /v1/feedback/remediation-outcome", h.recordFeedback)
 	mux.HandleFunc("POST /v1/topology/alias", h.upsertAlias)
-	return h.withMiddleware(mux)
+	return h.withCORS(h.withMiddleware(mux))
 }
 
 func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {

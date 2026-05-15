@@ -24,6 +24,17 @@ services:
       - postgres
       - redis
 
+  web-ui:
+    build:
+      context: ./web
+    ports:
+      - "3000:80"
+    depends_on:
+      - context-api
+    # No PCE_ALLOWED_ORIGINS needed — Nginx proxies /v1/* to context-api on the
+    # same origin, so the browser never makes a cross-origin request.
+
+
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.104.0
     command: ["--config=/etc/otelcol/collector.yaml"]

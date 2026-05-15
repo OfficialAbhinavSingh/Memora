@@ -1,4 +1,4 @@
-.PHONY: test fmt vet run web-lint web-build bench smoke docker-up docker-down
+.PHONY: test fmt vet run web-lint web-build web-docker bench smoke docker-up docker-down
 
 test:
 	cd services/context-api && go test ./...
@@ -17,6 +17,9 @@ web-lint:
 
 web-build:
 	cd web && npm run build
+
+web-docker:
+	docker build web -t pce/web-ui:local
 
 bench:
 	python bench/worked_example_check.py

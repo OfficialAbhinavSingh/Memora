@@ -48,6 +48,7 @@ Useful `make` targets (require Go and Docker on PATH):
 | `make run` | Run the context API locally |
 | `make web-lint` | Lint the React frontend |
 | `make web-build` | Production build of the frontend |
+| `make web-docker` | Build the Nginx+React production Docker image |
 | `make bench` | Run the Python worked-example smoke check |
 | `make docker-up` | Start the full local stack |
 | `make docker-down` | Stop the local stack |
@@ -116,3 +117,32 @@ Or run:
 - Storage adapters are interface-driven. ClickHouse stores telemetry, Postgres stores control-plane state and incident memory, and Neo4j receives mirrored relationship projections.
 - Reconstruction supports topology rename continuity, shape-aware incident recall, causal chain synthesis, and remediation ranking using historical outcomes with feedback decay.
 - External AI, embedding, and LLM services are not required and no outbound provider egress is used by default.
+
+## Frontend deployment
+
+Two supported models:
+
+### Same-domain Nginx (default — no CORS)
+
+`docker compose up` starts a `web-ui` container that runs Nginx on port 3000.
+Nginx serves `web/dist/` at `/` and reverse-proxies `/v1/*` to `context-api:8080`
+on the internal Docker network. The browser sees a single origin so no CORS
+headers are needed and `PCE_ALLOWED_ORIGINS` must be left empty.
+
+```
+browser → http://localhost:3000/          → web/dist (React SPA)
+browser → http://localhost:3000/v1/*      → Nginx → context-api:8080
+```
+
+### Separate subdomain / CDN (opt-in CORS)
+
+If the frontend is hosted on a different origin set `PCE_ALLOWED_ORIGINS` on
+the context-api container. The Go CORS middleware will then emit
+`Access-Control-Allow-Origin` only for listed origins and answer `OPTIONS`
+preflight requests with 204.
+
+```
+PCE_ALLOWED_ORIGINS=https://pce.yourdomain.com,https://pce-staging.yourdomain.com
+```
+
+A wildcard is never emitted. Only explicitly listed origins receive CORS headers.

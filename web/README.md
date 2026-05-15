@@ -1,32 +1,54 @@
 # PCE Frontend
 
-React + TypeScript frontend for the **Persistent Context Engine** — an operational memory platform for SREs and platform engineers.
+React + TypeScript frontend for the Persistent Context Engine.
 
 ## Stack
-- **Vite** + **React** + **TypeScript**
-- **react-router-dom** for routing
-- **lucide-react** for icons
-- Pure CSS design system (no Tailwind)
+
+- Vite + React + TypeScript
+- react-router-dom for routing
+- lucide-react for icons
+- Pure CSS design system
 
 ## Dev
+
 ```bash
 cd web
 npm install
-npm run dev        # → http://localhost:5173
+npm run dev
 ```
 
-The dev server proxies `/v1/*` requests to `http://localhost:8080` (the PCE Go backend).
+The dev server runs at `http://localhost:5173`.
+
+## API URL
+
+Create `web/.env` from `web/.env.example`.
+
+For normal local development, leave it blank:
+
+```bash
+VITE_API_BASE=
+```
+
+That uses the Vite proxy in `vite.config.ts`, sending `/v1/*` to `http://localhost:8080` and avoiding browser CORS issues.
+
+If the API is hosted elsewhere, set:
+
+```bash
+VITE_API_BASE=http://localhost:8080
+```
 
 ## Build
+
 ```bash
-npm run build      # → web/dist/
+npm run lint
+npm run build
 ```
 
 ## Pages
 
 | Route | Page |
-|-------|------|
-| `/` | Incident Workspace (primary) |
+| --- | --- |
+| `/` | Incident Workspace |
 | `/history` | Incident History |
 | `/timeline` | Investigation Timeline |
 | `/causal` | Causal Chain View |
@@ -37,10 +59,10 @@ npm run build      # → web/dist/
 
 ## Backend Integration
 
-The API client lives in `src/api/client.ts`. All endpoints map to the real PCE backend:
+The API client lives in `src/api/client.ts`.
 
 | UI action | Endpoint |
-|-----------|----------|
+| --- | --- |
 | Health check | `GET /v1/health` |
 | Readiness check | `GET /v1/readiness` |
 | Metrics | `GET /v1/metrics` |
@@ -49,16 +71,8 @@ The API client lives in `src/api/client.ts`. All endpoints map to the real PCE b
 | Submit feedback | `POST /v1/feedback/remediation-outcome` |
 | Register alias | `POST /v1/topology/alias` |
 
-When the backend is unavailable, the app uses seeded mock data in `src/data/mockData.ts` that pre-loads the **billing-svc incident demo scenario**.
+The Incident Workspace does not show mock data as live data. If the backend is unavailable, it shows an empty/API-unavailable state until telemetry is ingested and reconstruction succeeds.
 
-## Demo Scenario
+## Demo Fixtures
 
-Pre-loaded incident `INC-2024-0847`:
-- `payments-svc` renamed to `billing-svc`
-- Deploy `v2.4.1` deployed at 14:22 UTC
-- Connection pool config reduced: `pool_max: 200 → 50`
-- P99 latency spike: `120ms → 2100ms`
-- `checkout-api` timeout cascade, error rate `1.2% → 12.3%`
-- System detected topology alias via `svc-00441`
-- Matched `INC-2023-1204` at 93% similarity
-- Rollback to `v2.3.9` suggested at 87% confidence
+Fixture data still exists in `src/data/mockData.ts` for secondary static pages and future demo-mode work. It is not used as the live Incident Workspace response.

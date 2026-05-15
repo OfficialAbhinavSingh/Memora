@@ -1,18 +1,7 @@
 import { useState } from 'react';
 import { Search, RefreshCw } from 'lucide-react';
-import { api, type ContextResponse, type ContextEvent } from '../api/client';
-import {
-  DEMO_INCIDENT, DEMO_EVENTS, DEMO_CAUSAL_CHAIN,
-  DEMO_SIMILAR, DEMO_REMEDIATIONS
-} from '../data/mockData';
+import { API_BASE, api, type ContextResponse, type ContextEvent } from '../api/client';
 import { ConfBar, EventTypeBadge, EventBorderClass, PageHeader } from '../components/ui';
-
-const DEFAULT_SIGNAL = {
-  tenant_id: DEMO_INCIDENT.tenantId,
-  environment: 'prod',
-  service_name: DEMO_INCIDENT.service,
-  trigger: 'alert:checkout-api/error-rate>5%',
-};
 
 function percent(value: number) {
   return Math.round(value <= 1 ? value * 100 : value);
@@ -30,23 +19,33 @@ function eventDescription(event: ContextEvent) {
 }
 
 function eventMeta(event: ContextEvent) {
-  const pieces = [
+  return [
     event.event_id ? `id:${event.event_id.slice(0, 8)}` : '',
     event.trace_id ? `trace:${event.trace_id}` : '',
     event.canonical_service_id ?? '',
-  ].filter(Boolean);
-  return pieces.join(' / ');
+  ].filter(Boolean).join(' / ');
+}
+
+function EmptyPanel({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="panel" style={{ padding: '10px 12px', marginBottom: 8 }}>
+      <div className="text-xs" style={{ color: 'var(--text-heading)', fontWeight: 600, marginBottom: 4 }}>{title}</div>
+      <div className="text-xs text-muted">{body}</div>
+    </div>
+  );
 }
 
 export default function IncidentWorkspace() {
-  const [query, setQuery] = useState('INC-2024-0847');
+  const [incidentId, setIncidentId] = useState('INC-714');
+  const [tenantId, setTenantId] = useState('default');
+  const [environment, setEnvironment] = useState('prod');
+  const [serviceName, setServiceName] = useState('billing-svc');
+  const [trigger, setTrigger] = useState('alert:checkout-api/error-rate>5%');
   const [feedback, setFeedback] = useState<Record<number, string>>({});
   const [context, setContext] = useState<ContextResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState('');
 
-  const inc = DEMO_INCIDENT;
-  const confidence = context ? percent(context.confidence) : inc.confidence;
   const relatedEvents = context?.related_events ?? [];
   const causalChain = context?.causal_chain ?? [];
   const similarIncidents = context?.similar_past_incidents ?? [];
@@ -55,15 +54,18 @@ export default function IncidentWorkspace() {
   async function reconstruct() {
     setLoading(true);
     setApiError('');
+    setContext(null);
     try {
       const next = await api.reconstruct({
-        incident_id: query || inc.id,
+        incident_id: incidentId,
         ts: new Date().toISOString(),
-        ...DEFAULT_SIGNAL,
+        tenant_id: tenantId,
+        environment,
+        service_name: serviceName,
+        trigger,
       });
       setContext(next);
     } catch (err) {
-      setContext(null);
       setApiError(err instanceof Error ? err.message : 'Could not reach the Context API');
     } finally {
       setLoading(false);
@@ -76,17 +78,17 @@ export default function IncidentWorkspace() {
     if (!remediation) return;
     try {
       await api.submitFeedback({
-        incident_id: query || inc.id,
-        tenant_id: DEFAULT_SIGNAL.tenant_id,
-        environment: DEFAULT_SIGNAL.environment,
+        incident_id: incidentId,
+        tenant_id: tenantId,
+        environment,
         action: remediation.action,
         target: remediation.target,
         outcome,
         observed_at: new Date().toISOString(),
-        service_name: DEFAULT_SIGNAL.service_name,
+        service_name: serviceName,
       });
     } catch {
-      // Keep the local acknowledgement. The API may be offline in demo mode.
+      setApiError('Feedback was not saved because the Context API is unavailable.');
     }
   }
 
@@ -95,89 +97,77 @@ export default function IncidentWorkspace() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <PageHeader
           title="Incident Workspace"
-          subtitle={`${query || inc.id} / ${inc.service} / ${inc.severity}`}
+          subtitle={`${incidentId} / ${serviceName} / API: ${API_BASE}`}
           right={
-            <div style={{ display: 'flex', gap: 8 }}>
-              <div style={{ position: 'relative' }}>
-                <Search size={12} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                <input
-                  value={query}
-                  onChange={e => setQuery(e.target.value)}
-                  placeholder="Search incident ID or service"
-                  style={{ padding: '5px 10px 5px 28px', width: 260 }}
-                />
-              </div>
-              <button
-                className="btn-primary"
-                onClick={reconstruct}
-                disabled={loading}
-                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-              >
-                <RefreshCw size={12} /> {loading ? 'Reconstructing' : 'Reconstruct Context'}
-              </button>
-            </div>
+            <button
+              className="btn-primary"
+              onClick={reconstruct}
+              disabled={loading}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <RefreshCw size={12} /> {loading ? 'Reconstructing' : 'Reconstruct Context'}
+            </button>
           }
         />
 
         <div style={{ flex: 1, overflow: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div className="panel" style={{ padding: 14 }}>
-            <div className="section-label">Context Reconstruction</div>
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-heading)', marginBottom: 4 }}>{inc.title}</div>
-                <div className="text-xs mono text-muted">
-                  {context ? 'Live API context' : 'Demo fallback context'} / {inc.renamedFrom} {'->'} {inc.service} / deploy @ {inc.deployTime}
-                </div>
-              </div>
-              <div style={{ flexShrink: 0, width: 180 }}>
-                <div className="text-xs text-muted" style={{ marginBottom: 4 }}>Confidence</div>
-                <ConfBar value={confidence} />
-              </div>
+            <div className="section-label">Incident Signal</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(120px, 1fr))', gap: 8, marginBottom: 12 }}>
+              <label className="text-xs text-muted">Incident ID<input value={incidentId} onChange={e => setIncidentId(e.target.value)} style={{ width: '100%', marginTop: 4 }} /></label>
+              <label className="text-xs text-muted">Tenant<input value={tenantId} onChange={e => setTenantId(e.target.value)} style={{ width: '100%', marginTop: 4 }} /></label>
+              <label className="text-xs text-muted">Environment<input value={environment} onChange={e => setEnvironment(e.target.value)} style={{ width: '100%', marginTop: 4 }} /></label>
+              <label className="text-xs text-muted">Service<input value={serviceName} onChange={e => setServiceName(e.target.value)} style={{ width: '100%', marginTop: 4 }} /></label>
+              <label className="text-xs text-muted">Trigger<input value={trigger} onChange={e => setTrigger(e.target.value)} style={{ width: '100%', marginTop: 4 }} /></label>
             </div>
             {apiError && (
               <div style={{ fontSize: 12, color: 'var(--amber)', marginBottom: 8 }}>
-                API unavailable, showing demo memory: {apiError}
+                {apiError}
               </div>
             )}
             <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.7, padding: '10px 12px', background: 'var(--surface-low)', borderRadius: 'var(--radius)', borderLeft: '3px solid var(--accent)' }}>
-              {context?.explain ?? inc.explain}
+              {context?.explain ?? 'No reconstructed context yet. Start the Context API, ingest events, then run reconstruction.'}
             </div>
+            {context && (
+              <div style={{ marginTop: 10, maxWidth: 220 }}>
+                <div className="text-xs text-muted" style={{ marginBottom: 4 }}>Confidence</div>
+                <ConfBar value={percent(context.confidence)} />
+              </div>
+            )}
           </div>
 
           <div className="panel" style={{ overflow: 'hidden' }}>
             <div style={{ padding: '10px 14px 8px', borderBottom: '1px solid var(--border)' }}>
-              <span className="section-label">Related Events ({context ? relatedEvents.length : DEMO_EVENTS.length})</span>
+              <span className="section-label">Related Events ({relatedEvents.length})</span>
             </div>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Type</th>
-                  <th>Timestamp</th>
-                  <th>Service</th>
-                  <th>Description</th>
-                  <th>Meta</th>
-                </tr>
-              </thead>
-              <tbody>
-                {context ? relatedEvents.map(ev => (
-                  <tr key={ev.event_id} className={EventBorderClass(ev.kind)}>
-                    <td><EventTypeBadge kind={ev.kind} /></td>
-                    <td><span className="mono text-xs">{new Date(ev.ts).toLocaleTimeString()}</span></td>
-                    <td><span className="mono text-xs">{ev.service_name ?? ev.canonical_service_id ?? '-'}</span></td>
-                    <td style={{ maxWidth: 380, fontSize: 12 }}>{eventDescription(ev)}</td>
-                    <td><span className="mono text-xs text-muted">{eventMeta(ev)}</span></td>
+            {relatedEvents.length === 0 ? (
+              <div style={{ padding: 24, color: 'var(--text-muted)', fontSize: 12 }}>
+                <Search size={14} /> No live events returned yet.
+              </div>
+            ) : (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Type</th>
+                    <th>Timestamp</th>
+                    <th>Service</th>
+                    <th>Description</th>
+                    <th>Meta</th>
                   </tr>
-                )) : DEMO_EVENTS.map(ev => (
-                  <tr key={ev.id} className={EventBorderClass(ev.kind)} style={ev.critical ? { background: 'rgba(239,68,68,0.04)' } : undefined}>
-                    <td><EventTypeBadge kind={ev.kind} /></td>
-                    <td><span className="mono text-xs">{ev.ts} UTC</span></td>
-                    <td><span className="mono text-xs">{ev.service}</span></td>
-                    <td style={{ maxWidth: 380, fontSize: 12 }}>{ev.desc}</td>
-                    <td><span className="mono text-xs text-muted">{ev.meta}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {relatedEvents.map(ev => (
+                    <tr key={ev.event_id} className={EventBorderClass(ev.kind)}>
+                      <td><EventTypeBadge kind={ev.kind} /></td>
+                      <td><span className="mono text-xs">{new Date(ev.ts).toLocaleTimeString()}</span></td>
+                      <td><span className="mono text-xs">{ev.service_name ?? ev.canonical_service_id ?? '-'}</span></td>
+                      <td style={{ maxWidth: 380, fontSize: 12 }}>{eventDescription(ev)}</td>
+                      <td><span className="mono text-xs text-muted">{eventMeta(ev)}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       </div>
@@ -186,7 +176,7 @@ export default function IncidentWorkspace() {
         <div style={{ flex: 1, overflow: 'auto', padding: 14, display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
             <div className="section-label">Causal Chain</div>
-            {context ? causalChain.map((edge, i) => (
+            {causalChain.length === 0 ? <EmptyPanel title="No edges yet" body="Run reconstruction after ingesting telemetry." /> : causalChain.map((edge, i) => (
               <div key={`${edge.cause_id}-${edge.effect_id}`} className="panel" style={{ padding: '8px 10px', marginBottom: 8 }}>
                 <div className="text-xs text-muted" style={{ marginBottom: 3 }}>EDGE {i + 1}</div>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-heading)', marginBottom: 4 }}>
@@ -195,20 +185,6 @@ export default function IncidentWorkspace() {
                 <div className="text-xs text-muted" style={{ marginBottom: 6 }}>{edge.evidence.join(', ')}</div>
                 <ConfBar value={percent(edge.confidence)} />
               </div>
-            )) : DEMO_CAUSAL_CHAIN.map((node, i) => (
-              <div key={node.id}>
-                {i > 0 && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0 4px 10px' }}>
-                    <div style={{ width: 1, height: 14, background: 'var(--border)', marginLeft: 5 }} />
-                    <span className="text-xs text-muted">{node.edgeLabel} <span className="mono" style={{ color: 'var(--accent)' }}>{node.edgeConf}%</span></span>
-                  </div>
-                )}
-                <div className="panel" style={{ padding: '8px 10px' }}>
-                  <div className="text-xs text-muted" style={{ marginBottom: 3 }}>{node.label}</div>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-heading)', marginBottom: 4 }}>{node.event}</div>
-                  <ConfBar value={node.confidence} />
-                </div>
-              </div>
             ))}
           </div>
 
@@ -216,22 +192,13 @@ export default function IncidentWorkspace() {
 
           <div>
             <div className="section-label">Similar Incidents</div>
-            {context ? similarIncidents.slice(0, 2).map(s => (
+            {similarIncidents.length === 0 ? <EmptyPanel title="No matches yet" body="Historical incident matches will appear here." /> : similarIncidents.slice(0, 2).map(s => (
               <div key={s.past_incident_id} className="panel" style={{ padding: '8px 10px', marginBottom: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                   <span className="mono text-xs" style={{ color: 'var(--text-heading)', fontWeight: 600 }}>{s.past_incident_id}</span>
                   <span className={`badge ${percent(s.similarity) >= 80 ? 'badge-green' : percent(s.similarity) >= 60 ? 'badge-amber' : 'badge-gray'}`}>{percent(s.similarity)}%</span>
                 </div>
                 <div className="text-xs text-muted">{s.rationale}</div>
-              </div>
-            )) : DEMO_SIMILAR.slice(0, 2).map(s => (
-              <div key={s.id} className="panel" style={{ padding: '8px 10px', marginBottom: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span className="mono text-xs" style={{ color: 'var(--text-heading)', fontWeight: 600 }}>{s.id}</span>
-                  <span className={`badge ${s.score >= 80 ? 'badge-green' : s.score >= 60 ? 'badge-amber' : 'badge-gray'}`}>{s.score}%</span>
-                </div>
-                <div className="text-xs text-muted">{s.rationale}</div>
-                <div className="text-xs" style={{ color: 'var(--green)', marginTop: 4 }}>{s.resolution}</div>
               </div>
             ))}
           </div>
@@ -240,7 +207,7 @@ export default function IncidentWorkspace() {
 
           <div>
             <div className="section-label">Remediations</div>
-            {context ? remediations.slice(0, 2).map((r, i) => (
+            {remediations.length === 0 ? <EmptyPanel title="No suggestions yet" body="Suggested remediations depend on historical feedback." /> : remediations.slice(0, 2).map((r, i) => (
               <div key={`${r.action}-${r.target}`} className="panel" style={{ padding: '8px 10px', marginBottom: 8 }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-heading)', marginBottom: 4 }}>#{i + 1} {r.action} {r.target}</div>
                 <ConfBar value={percent(r.confidence)} />
@@ -248,22 +215,6 @@ export default function IncidentWorkspace() {
                 <div style={{ display: 'flex', gap: 4 }}>
                   {(['worked', 'failed', 'unsure'] as const).map(o => (
                     <button key={o} className="btn-ghost btn-sm" onClick={() => recordFeedback(i, o)}>
-                      {feedback[i] === o ? `${o} saved` : o}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )) : DEMO_REMEDIATIONS.slice(0, 2).map((r, i) => (
-              <div key={r.rank} className="panel" style={{ padding: '8px 10px', marginBottom: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, alignItems: 'flex-start', gap: 6 }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-heading)', flex: 1 }}>#{r.rank} {r.title}</div>
-                  <span className={`badge badge-${r.labelColor}`}>{r.label}</span>
-                </div>
-                <ConfBar value={r.confidence} />
-                <div className="text-xs text-muted" style={{ margin: '6px 0 6px' }}>{r.history}</div>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  {(['worked', 'failed', 'unsure'] as const).map(o => (
-                    <button key={o} className="btn-ghost btn-sm" onClick={() => setFeedback(f => ({ ...f, [i]: o }))}>
                       {feedback[i] === o ? `${o} saved` : o}
                     </button>
                   ))}

@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections import defaultdict, deque
+from collections import Counter, defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from typing import Iterable
 
@@ -39,6 +39,25 @@ def _confidence(v):
     return round(max(0.0, min(1.0, v)), 2)
 
 
+def _incident_family(incident_id: str):
+    try:
+        return int(str(incident_id).rsplit("-", 1)[-1])
+    except (TypeError, ValueError, IndexError):
+        return str(incident_id)
+
+
+def _jaccard(left, right) -> float:
+    a, b = set(left or []), set(right or [])
+    if not a and not b:
+        return 1.0
+    return len(a & b) / max(len(a | b), 1)
+
+
+def _primary(values, default: str = "none") -> str:
+    vals = sorted(v for v in (values or []) if v)
+    return vals[0] if vals else default
+
+
 # ---------------------------------------------------------------------------
 # Service inference from trigger strings
 # e.g. "alert:checkout-api/error-rate>5%"  ->  "checkout-api"
@@ -59,17 +78,101 @@ def _infer_service_from_trigger(trigger: str) -> str:
     return m.group(1).lower() if m else ""
 
 
-def _infer_service_from_events(events: list, window_ts: datetime, window: timedelta) -> str:
-    """Pick the most-mentioned service in nearby events."""
-    counts: dict[str, int] = defaultdict(int)
+def _event_services(event: dict) -> set[str]:
+    services = set()
+    if event.get("service_name"):
+        services.add(str(event["service_name"]).lower())
+    for entity in event.get("entities", []):
+        services.add(str(entity).lower())
+    for span in event.get("attributes", {}).get("spans", []) or []:
+        if span.get("svc"):
+            services.add(str(span["svc"]).lower())
+    return services
+
+
+def _slowest_trace_service(event: dict) -> str:
+    spans = event.get("attributes", {}).get("spans", []) or []
+    best = ("", -1.0)
+    for span in spans:
+        try:
+            dur = float(span.get("dur_ms", 0))
+        except (TypeError, ValueError):
+            dur = 0.0
+        svc = str(span.get("svc", "")).lower()
+        if svc and dur > best[1]:
+            best = (svc, dur)
+    return best[0]
+
+
+def _trace_roles(event: dict) -> set[str]:
+    spans = event.get("attributes", {}).get("spans", []) or []
+    roles = set()
+    if len(spans) >= 2:
+        roles.add("caller-callee")
+        slow = _slowest_trace_service(event)
+        if slow:
+            roles.add("slow-callee")
+    return roles
+
+
+def _infer_service_from_events(events: list, window_ts: datetime, window: timedelta, trigger: str = "") -> str:
+    """Pick the most likely failing service from nearby behavior."""
+    scores: Counter[str] = Counter()
     lo, hi = window_ts - window, window_ts + window
+    alerting = _infer_service_from_trigger(trigger)
     for e in events:
         if not (lo <= _parse_ts(e["ts"]) <= hi):
             continue
-        svc = e.get("service_name") or e.get("canonical_service_id", "")
-        if svc:
-            counts[svc] += 1
-    return max(counts, key=counts.__getitem__) if counts else ""
+        kind = e.get("kind")
+        svc = str(e.get("service_name", "")).lower()
+        if kind == "metric":
+            if svc:
+                scores[svc] += 5 if _metric_is_anomaly(e) else 1
+        elif kind == "trace":
+            slow = _slowest_trace_service(e)
+            if slow:
+                scores[slow] += 5
+            if svc:
+                scores[svc] += 1
+        elif kind == "log":
+            attrs = e.get("attributes", {})
+            msg = str(attrs.get("msg", attrs.get("message", ""))).lower()
+            mentioned = [s for s in _event_services(e) if s != svc]
+            for target in mentioned:
+                scores[target] += 4 if _log_is_failure(e) else 1
+            if svc:
+                scores[svc] += 2 if _log_is_failure(e) and svc != alerting else 1
+            for token in re.findall(r"[a-z0-9][a-z0-9_-]*(?:-svc|-api|-service|-worker|-job|-db|-cache)", msg):
+                if token != alerting:
+                    scores[token] += 4
+        elif svc:
+            scores[svc] += 1
+    if not scores:
+        return alerting
+    return scores.most_common(1)[0][0]
+
+
+def _metric_is_anomaly(event: dict) -> bool:
+    attrs = event.get("attributes", {})
+    name = str(attrs.get("name", "")).lower()
+    try:
+        value = float(str(attrs.get("value", 0)).rstrip("%"))
+    except (TypeError, ValueError):
+        value = 0.0
+    if "error" in name or "failure" in name:
+        return value > 1.0
+    if any(token in name for token in ("latency", "p99", "p95", "duration", "ms")):
+        return value > 200
+    return value >= 1000
+
+
+def _log_is_failure(event: dict) -> bool:
+    attrs = event.get("attributes", {})
+    msg = str(attrs.get("msg", attrs.get("message", ""))).lower()
+    level = str(attrs.get("level", "")).lower()
+    return level in ("error", "fatal", "critical") or any(
+        token in msg for token in ("timeout", "refused", "error", "exception", "failed", "5xx", "500")
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -133,8 +236,10 @@ class _IncidentProfile:
         self.tenant_id = tenant_id
         self.environment = environment
         self.events: list[dict] = []
+        self.event_ids: set[str] = set()
         self.remediations: list[dict] = []
         self.affected_canonical: set[str] = set()
+        self.service_names: set[str] = set()
         self.trigger: str = ""
         self.first_ts: str = ""
         self.last_ts: str = ""
@@ -142,9 +247,18 @@ class _IncidentProfile:
         self._sig: dict = {}
 
     def add(self, event: dict) -> None:
+        event_id = event.get("event_id", "")
+        if event_id and event_id in self.event_ids:
+            return
+        if event_id:
+            self.event_ids.add(event_id)
         self.events.append(event)
         if c := event.get("canonical_service_id"):
             self.affected_canonical.add(c)
+        if svc := event.get("service_name"):
+            self.service_names.add(str(svc).lower())
+        for entity in event.get("entities", []):
+            self.service_names.add(str(entity).lower())
         ts = event.get("ts", "")
         if not self.first_ts or ts < self.first_ts:
             self.first_ts = ts
@@ -176,7 +290,7 @@ class _IncidentProfile:
                 delay = "<5m" if s < 300 else "5-15m" if s < 900 else "15-30m" if s < 1800 else ">30m"
             except Exception:
                 delay = "unknown"
-        metric_cls, log_cls = set(), set()
+        metric_cls, log_cls, trace_cls = set(), set(), set()
         for e in evs:
             a = e.get("attributes", {})
             name = str(a.get("name", "")).lower()
@@ -193,6 +307,29 @@ class _IncidentProfile:
                 log_cls.add("connection")
             if any(k in msg for k in ("500", "502", "503", "504", "5xx")):
                 log_cls.add("5xx")
+            if e.get("kind") == "metric" and _metric_is_anomaly(e):
+                metric_cls.add("anomaly")
+            if e.get("kind") == "log" and _log_is_failure(e):
+                log_cls.add("failure")
+            if e.get("kind") == "trace":
+                trace_cls.update(_trace_roles(e))
+        remediation_types = sorted({
+            str(r.get("attributes", {}).get("action", "")).lower()
+            for r in self.remediations
+        })
+        outcome_class = "resolved" if self.resolved else "failed" if any(
+            str(r.get("attributes", {}).get("outcome", "")).lower() == "failed"
+            for r in self.remediations
+        ) else "unknown"
+        shape_key = "|".join([
+            "deploy" if "deploy" in kinds else "no-deploy",
+            delay,
+            _primary(metric_cls),
+            _primary(log_cls),
+            _primary(trace_cls),
+            _primary(remediation_types),
+            outcome_class,
+        ])
         self._sig = {
             "has_deploy": "deploy" in kinds,
             "has_metric": "metric" in kinds,
@@ -202,21 +339,24 @@ class _IncidentProfile:
             "delay_bucket": delay,
             "metric_class": sorted(metric_cls),
             "log_class": sorted(log_cls),
-            "remediation_types": sorted({
-                str(r.get("attributes", {}).get("action", "")).lower()
-                for r in self.remediations
-            }),
+            "trace_class": sorted(trace_cls),
+            "remediation_types": remediation_types,
+            "outcome_class": outcome_class,
+            "shape_key": shape_key,
             "resolved": self.resolved,
         }
         return self._sig
 
-    def sig_similarity(self, other: "_IncidentProfile") -> float:
+    def sig_similarity_details(self, other: "_IncidentProfile") -> tuple[float, dict]:
         a, b = self.signature(), other.signature()
         score = weight = 0.0
+        parts = {}
 
         def bm(k, w):
             nonlocal score, weight
             weight += w
+            hit = a.get(k) == b.get(k)
+            parts[k] = 1.0 if hit else 0.0
             if a.get(k) == b.get(k):
                 score += w
 
@@ -224,16 +364,29 @@ class _IncidentProfile:
             nonlocal score, weight
             weight += w
             sa, sb = set(a.get(k, [])), set(b.get(k, []))
-            score += w * (len(sa & sb) / max(len(sa | sb), 1) if (sa or sb) else 1.0)
+            similarity = len(sa & sb) / max(len(sa | sb), 1) if (sa or sb) else 1.0
+            parts[k] = round(similarity, 3)
+            score += w * similarity
 
         bm("has_deploy", 1.5)
         bm("delay_bucket", 2.0)
         sm("metric_class", 2.5)
         sm("log_class", 2.0)
+        sm("trace_class", 1.5)
         bm("has_remediation", 1.0)
         sm("remediation_types", 1.5)
         bm("resolved", 0.5)
-        return score / weight if weight else 0.0
+        overall = score / weight if weight else 0.0
+        return overall, {
+            "overall": round(overall, 3),
+            "current_signature": a,
+            "historical_signature": b,
+            "components": parts,
+        }
+
+    def sig_similarity(self, other: "_IncidentProfile") -> float:
+        score, _ = self.sig_similarity_details(other)
+        return score
 
 # ---------------------------------------------------------------------------
 # Engine — public API expected by Anvil benchmark harness
@@ -254,19 +407,23 @@ class Engine:
     # ------------------------------------------------------------------
 
     def ingest(self, events: Iterable[dict]) -> None:
-        batch = []
+        batch_signals = []
+        batch_remediations = []
         for raw in events:
             ev = self._normalize(raw)
             self._resolve_canonical(ev)
             self._events.append(ev)
-            batch.append(ev)
             # update indexes
             if c := ev.get("canonical_service_id"):
                 self._by_service[c].append(ev)
             if iid := ev.get("incident_id"):
                 self._by_incident[iid].append(ev)
                 self._update_profile(iid, ev)
+            if ev["kind"] == "incident_signal":
+                batch_signals.append(ev)
+                self._seed_profile_from_signal(ev)
             if ev["kind"] == "remediation":
+                batch_remediations.append(ev)
                 self._feedback.append({
                     "incident_id": ev.get("incident_id", ""),
                     "tenant_id": ev["tenant_id"],
@@ -278,8 +435,13 @@ class Engine:
                     "service_name": ev.get("service_name", ""),
                     "canonical_service_id": ev.get("canonical_service_id", ""),
                 })
+                self._attach_remediation_to_nearby_profiles(ev)
         # sort just new batch's range (already sorted prefix)
         self._events.sort(key=lambda e: (e["ts"], e["event_id"]))
+        for signal in batch_signals:
+            self._seed_profile_from_signal(signal)
+        for remediation in batch_remediations:
+            self._attach_remediation_to_nearby_profiles(remediation)
 
     def ingest_jsonl(self, text: str) -> None:
         evts = []
@@ -312,15 +474,21 @@ class Engine:
 
         # --- service resolution: try field, then trigger, then events ---
         svc = sig.get("service_name", "")
+        explicit_svc = bool(svc)
         if not svc:
             svc = _infer_service_from_trigger(sig.get("trigger", ""))
-        if not svc:
-            svc = _infer_service_from_events(self._events, sig_ts, window)
+        if not svc or svc == _infer_service_from_trigger(sig.get("trigger", "")):
+            inferred = _infer_service_from_events(self._events, sig_ts, window, sig.get("trigger", ""))
+            if inferred:
+                svc = inferred
         if svc:
             sig["service_name"] = svc
             sig["canonical_service_id"] = self._aliases.resolve(
                 sig["tenant_id"], sig["environment"], svc
             )
+            if not explicit_svc and "|" in sig["canonical_service_id"]:
+                sig["service_name"] = sig["canonical_service_id"].split("|", 2)[-1]
+                svc = sig["service_name"]
 
         canonical = sig.get("canonical_service_id", "")
         all_aliases = set(self._aliases.aliases(sig["tenant_id"], sig["environment"], svc))
@@ -328,21 +496,14 @@ class Engine:
         if canonical:
             all_aliases.add(canonical)
 
-        # candidates: same tenant/env in window, service-matched or incident-matched
-        candidates = [
-            e for e in self._events
-            if e["tenant_id"] == sig["tenant_id"]
-            and e["environment"] == sig["environment"]
-            and lo <= _parse_ts(e["ts"]) <= hi
-            and (
-                not all_aliases
-                or self._svc_match(e, all_aliases, canonical)
-                or e.get("incident_id") == sig["incident_id"]
-            )
-        ]
+        candidates = self._candidate_events(
+            sig["tenant_id"], sig["environment"], lo, hi, all_aliases, canonical, sig["incident_id"]
+        )
 
-        related = self._rank_related(sig, candidates, sig_ts)
-        causal = self._causal_edges(related)
+        related_limit = 10 if mode == "fast" else 25
+        causal_limit = 8 if mode == "fast" else 20
+        related = self._rank_related(sig, candidates, sig_ts, limit=related_limit)
+        causal = self._causal_edges(related, limit=causal_limit)
         similar = self._similar(sig, related)
         remediations = self._remediations(sig, similar, all_aliases, sig_ts)
         confidence = _confidence(
@@ -403,6 +564,10 @@ class Engine:
             attrs.setdefault("version", raw.get("version", ""))
             attrs.setdefault("outcome", raw.get("outcome", ""))
             svc = svc or attrs.get("target", "")
+        elif kind == "incident_signal":
+            attrs.setdefault("trigger", raw.get("trigger", ""))
+            attrs.setdefault("service", raw.get("service", raw.get("service_name", "")))
+            svc = svc or attrs.get("service", "")
         # extract entity mentions (service names embedded in attr blobs)
         entities = set(raw.get("entities") or [])
         for span in attrs.get("spans", []) or []:
@@ -459,7 +624,90 @@ class Engine:
             self._profiles[incident_id] = _IncidentProfile(
                 incident_id, event["tenant_id"], event["environment"]
             )
-        self._profiles[incident_id].add(event)
+        profile = self._profiles[incident_id]
+        if event["kind"] == "incident_signal":
+            trigger = event.get("attributes", {}).get("trigger", "")
+            if trigger:
+                profile.trigger = trigger
+        profile.add(event)
+
+    def _seed_profile_from_signal(self, signal_event: dict) -> None:
+        incident_id = signal_event.get("incident_id")
+        if not incident_id:
+            return
+        profile = self._profiles[incident_id]
+        attrs = signal_event.get("attributes", {})
+        trigger = str(attrs.get("trigger", ""))
+        if trigger:
+            profile.trigger = trigger
+        sig_ts = _parse_ts(signal_event["ts"])
+        service = signal_event.get("service_name") or _infer_service_from_trigger(trigger)
+        if not service:
+            service = _infer_service_from_events(self._events, sig_ts, timedelta(minutes=30), trigger)
+        canonical = self._aliases.resolve(signal_event["tenant_id"], signal_event["environment"], service)
+        aliases = set(self._aliases.aliases(signal_event["tenant_id"], signal_event["environment"], service))
+        if service:
+            aliases.add(service)
+        if canonical:
+            aliases.add(canonical)
+            profile.affected_canonical.add(canonical)
+
+        candidates = self._candidate_events(
+            signal_event["tenant_id"],
+            signal_event["environment"],
+            sig_ts - timedelta(minutes=45),
+            sig_ts + timedelta(minutes=10),
+            aliases,
+            canonical,
+            incident_id,
+        )
+        for event in self._rank_related({
+            "incident_id": incident_id,
+            "ts": signal_event["ts"],
+            "tenant_id": signal_event["tenant_id"],
+            "environment": signal_event["environment"],
+            "service_name": service,
+            "canonical_service_id": canonical,
+            "trigger": trigger,
+            "attributes": attrs,
+        }, candidates, sig_ts, limit=20):
+            profile.add(event)
+        profile.signature()
+
+    def _attach_remediation_to_nearby_profiles(self, remediation: dict) -> None:
+        incident_id = remediation.get("incident_id")
+        if incident_id and incident_id in self._profiles:
+            self._profiles[incident_id].add(remediation)
+            return
+        rem_ts = _parse_ts(remediation["ts"])
+        target = str(remediation.get("service_name") or remediation.get("attributes", {}).get("target", "")).lower()
+        for profile in self._profiles.values():
+            if profile.tenant_id != remediation["tenant_id"] or profile.environment != remediation["environment"]:
+                continue
+            if not profile.last_ts:
+                continue
+            if not (timedelta(0) <= rem_ts - _parse_ts(profile.last_ts) <= timedelta(hours=2)):
+                continue
+            if target and target not in profile.service_names:
+                aliases = set()
+                for service in profile.service_names:
+                    aliases.update(self._aliases.aliases(profile.tenant_id, profile.environment, service))
+                if target not in {a.lower() for a in aliases}:
+                    continue
+            profile.add(remediation)
+
+    def _candidate_events(self, tenant: str, env: str, lo: datetime, hi: datetime, aliases: set, canonical: str, incident_id: str = "") -> list:
+        return [
+            e for e in self._events
+            if e["tenant_id"] == tenant
+            and e["environment"] == env
+            and lo <= _parse_ts(e["ts"]) <= hi
+            and (
+                not aliases
+                or self._svc_match(e, aliases, canonical)
+                or (incident_id and e.get("incident_id") == incident_id)
+            )
+        ]
 
     # ------------------------------------------------------------------
     # Internal: matching helpers
@@ -483,40 +731,88 @@ class Engine:
     # Internal: rank related events
     # ------------------------------------------------------------------
 
-    def _rank_related(self, sig: dict, candidates: list, sig_ts: datetime) -> list:
+    def _rank_related(self, sig: dict, candidates: list, sig_ts: datetime, limit: int = 10) -> list:
         canonical = sig.get("canonical_service_id", "")
+        svc_lower = (sig.get("service_name") or "").lower()
+        incident_id = sig.get("incident_id", "")
+
+        # ---- Pass 1: gate on primary signal -----------------------------------
+        # An event must match on canonical service, service name, OR incident_id.
+        # Time proximity and kind bonuses are secondary — they cannot get an event
+        # past the gate on their own (that was the precision leak).
         scored = []
+        primary_trace_ids: set[str] = set()
+
+        tenant = sig.get("tenant_id", "default")
+        env = sig.get("environment", "prod")
+
         for ev in candidates:
+            ev_can = ev.get("canonical_service_id", "")
+            ev_svc = (ev.get("service_name") or "").lower()
+            ev_iid = ev.get("incident_id", "")
+            ev_tid = ev.get("trace_id", "")
+
+            # Resolve stored canonical through LIVE alias graph (handles pre-rename events)
+            live_ev_can = self._aliases.canonical.get(ev_can, ev_can) if ev_can else ""
+            live_svc_can = self._aliases.resolve(tenant, env, ev_svc) if ev_svc else ""
+
             s = 0.0
-            if ev.get("canonical_service_id") == canonical and canonical:
-                s += 0.35
-            if ev.get("service_name", "").lower() == sig.get("service_name", "").lower() and sig.get("service_name"):
+            primary = False
+
+            if canonical and (ev_can == canonical or live_ev_can == canonical or live_svc_can == canonical):
+                s += 0.40
+                primary = True
+            if svc_lower and ev_svc == svc_lower:
                 s += 0.20
-            if ev.get("incident_id") and ev["incident_id"] == sig.get("incident_id"):
-                s += 0.25
-            trigger = sig.get("trigger", "").lower()
-            if trigger and trigger in json.dumps(ev.get("attributes", {})).lower():
-                s += 0.10
-            s += {"deploy": 0.18, "metric": 0.16, "log": 0.14, "trace": 0.14, "remediation": 0.10}.get(ev["kind"], 0)
+                primary = True
+            if incident_id and ev_iid == incident_id:
+                s += 0.30
+                primary = True
+
+            if not primary:
+                continue  # drop time-coincident noise from other services
+
+            # Secondary scoring (kind + temporal proximity only)
+            s += {"deploy": 0.18, "metric": 0.16, "log": 0.14,
+                  "trace": 0.14, "remediation": 0.12}.get(ev["kind"], 0)
             delta = abs((sig_ts - _parse_ts(ev["ts"])).total_seconds() / 60)
-            s += max(0, 0.20 - delta / 180)
-            if s >= 0.15:
+            s += max(0.0, 0.15 - delta / 200)  # smaller temporal bonus
+
+            if s >= 0.30:  # raised from 0.15
                 scored.append((s, delta, ev))
+                if ev_tid:
+                    primary_trace_ids.add(ev_tid)
+
         scored.sort(key=lambda x: (-x[0], x[1], x[2]["event_id"]))
-        seen, out = set(), []
+        seen: set[str] = set()
+        out: list[dict] = []
         for _, _, ev in scored:
             if ev["event_id"] not in seen:
                 seen.add(ev["event_id"])
                 out.append(ev)
-                if len(out) == 15:
+                if len(out) == limit:
                     break
+
+        # ---- Pass 2: trace-ID linking ----------------------------------------
+        # Events sharing a trace_id with a primary event are causally linked;
+        # include them even if they belong to a different service (e.g. caller).
+        if primary_trace_ids and len(out) < limit:
+            for ev in candidates:
+                if len(out) >= limit:
+                    break
+                if ev["event_id"] in seen:
+                    continue
+                if ev.get("trace_id") and ev["trace_id"] in primary_trace_ids:
+                    seen.add(ev["event_id"])
+                    out.append(ev)
+
         return sorted(out, key=lambda e: (e["ts"], e["event_id"]))
 
     # ------------------------------------------------------------------
     # Internal: causal edges (more types than before)
     # ------------------------------------------------------------------
 
-    def _causal_edges(self, events: list) -> list:
+    def _causal_edges(self, events: list, limit: int = 8) -> list:
         deploys   = [e for e in events if e["kind"] == "deploy"]
         metrics   = [e for e in events if e["kind"] == "metric" and self._is_anomaly_metric(e)]
         logs      = [e for e in events if e["kind"] == "log" and self._is_failure_log(e)]
@@ -526,25 +822,42 @@ class Engine:
 
         def _ts(e): return _parse_ts(e["ts"])
         def _before(a, b, max_min=60): return 0 < (_ts(b) - _ts(a)).total_seconds() <= max_min * 60
+        def _ordering_proof(a, b):
+            delta = int((_ts(b) - _ts(a)).total_seconds())
+            return f"{a['ts']} precedes {b['ts']} by {delta}s"
+
+        def _edge(cause, effect, label, confidence, ordering_proof=None):
+            cause_id = cause["event_id"] if isinstance(cause, dict) else str(cause)
+            effect_id = effect["event_id"] if isinstance(effect, dict) else str(effect)
+            proof = ordering_proof
+            if proof is None and isinstance(cause, dict) and isinstance(effect, dict):
+                proof = _ordering_proof(cause, effect)
+            return {
+                "cause_id": cause_id,
+                "effect_id": effect_id,
+                "cause_event_id": cause_id,
+                "effect_event_id": effect_id,
+                "evidence": [label],
+                "evidence_label": label,
+                "confidence": confidence,
+                "ordering_proof": proof or "ordering inferred from event provenance",
+            }
 
         # deploy → metric spike
         for d in deploys:
             for m in metrics:
                 if _before(d, m, 60):
-                    edges.append({"cause_id": d["event_id"], "effect_id": m["event_id"],
-                                  "evidence": ["deploy_precedes_metric_spike"], "confidence": 0.82})
+                    edges.append(_edge(d, m, "deploy_precedes_metric_spike", 0.82))
         # deploy → log failure
         for d in deploys:
             for l in logs:
                 if _before(d, l, 60):
-                    edges.append({"cause_id": d["event_id"], "effect_id": l["event_id"],
-                                  "evidence": ["deploy_precedes_log_failure"], "confidence": 0.75})
+                    edges.append(_edge(d, l, "deploy_precedes_log_failure", 0.75))
         # metric spike → upstream log failure
         for m in metrics:
             for l in logs:
                 if _before(m, l, 30):
-                    edges.append({"cause_id": m["event_id"], "effect_id": l["event_id"],
-                                  "evidence": ["metric_spike_precedes_failure"], "confidence": 0.68})
+                    edges.append(_edge(m, l, "metric_spike_precedes_failure", 0.68))
         # trace caller → callee latency
         for t in traces:
             spans = t.get("attributes", {}).get("spans", []) or []
@@ -553,21 +866,25 @@ class Engine:
                     caller_svc = spans[i].get("svc", "")
                     callee_svc = spans[i + 1].get("svc", "")
                     if caller_svc != callee_svc:
-                        edges.append({"cause_id": t["event_id"], "effect_id": t["event_id"] + f"_span{i}",
-                                      "evidence": [f"trace_caller_{caller_svc}_callee_{callee_svc}"], "confidence": 0.65})
+                        edges.append(_edge(
+                            t,
+                            t["event_id"] + f"_span{i}",
+                            f"trace_caller_{caller_svc}_callee_{callee_svc}",
+                            0.65,
+                            "single trace preserves caller/callee span order",
+                        ))
         # log failure → remediation
         for l in logs:
             for r in remeds:
                 if _before(l, r, 120):
-                    edges.append({"cause_id": l["event_id"], "effect_id": r["event_id"],
-                                  "evidence": ["failure_log_triggers_remediation"], "confidence": 0.70})
+                    edges.append(_edge(l, r, "failure_log_triggers_remediation", 0.70))
         # deduplicate by (cause, effect), keep highest confidence
         best: dict[tuple, dict] = {}
         for edge in edges:
             key = (edge["cause_id"], edge["effect_id"])
             if key not in best or edge["confidence"] > best[key]["confidence"]:
                 best[key] = edge
-        return sorted(best.values(), key=lambda e: (-e["confidence"], e["cause_id"]))[:8]
+        return sorted(best.values(), key=lambda e: (-e["confidence"], e["cause_id"]))[:limit]
 
     # ------------------------------------------------------------------
     # Internal: similar incidents
@@ -583,6 +900,7 @@ class Engine:
 
         canonical = sig.get("canonical_service_id", "")
         trigger = sig.get("trigger", "").lower()
+        trigger_svc = _infer_service_from_trigger(trigger)
         matches = []
 
         for iid, profile in self._profiles.items():
@@ -591,7 +909,9 @@ class Engine:
             if profile.tenant_id != sig["tenant_id"] or profile.environment != sig["environment"]:
                 continue
 
-            score = 0.0
+            contributors = {}
+            live_cans = set()
+            lineage_score = 0.0
             # canonical service match — resolve stored canonicals through the
             # CURRENT alias graph so renamed services (payments-svc -> billing-svc)
             # still match historical profiles built pre-rename.
@@ -601,30 +921,182 @@ class Engine:
                     for c in profile.affected_canonical
                 }
                 if canonical in live_cans:
-                    score += 0.30
+                    lineage_score = 1.0
+                else:
+                    current_aliases = {
+                        a.lower()
+                        for a in self._aliases.aliases(sig["tenant_id"], sig["environment"], sig.get("service_name", ""))
+                    }
+                    if current_aliases & profile.service_names:
+                        lineage_score = 0.75
+            contributors["service_lineage"] = round(lineage_score * 0.34, 3)
             # trigger text similarity
+            trigger_score = 0.0
             if trigger and profile.trigger.lower() == trigger:
-                score += 0.25
+                trigger_score = 1.0
             elif trigger and trigger[:20] in profile.trigger.lower():
-                score += 0.12
+                trigger_score = 0.45
+            elif trigger_svc:
+                hist_trigger_svc = _infer_service_from_trigger(profile.trigger)
+                if hist_trigger_svc and hist_trigger_svc == trigger_svc:
+                    trigger_score = 0.70
+                elif trigger_svc in profile.service_names:
+                    trigger_score = 0.55
+            contributors["trigger"] = round(trigger_score * 0.16, 3)
             # behavioral signature similarity
-            sig_sim = tmp.sig_similarity(profile)
-            score += sig_sim * 0.45
+            sig_sim, sig_audit = tmp.sig_similarity_details(profile)
+            shape_score, shape_audit = self._shape_score(tmp, profile)
+            temporal_score = 1.0 if shape_audit["components"].get("delay_bucket") == 1.0 else 0.0
+            remediation_score = 1.0 if profile.resolved else 0.25 if profile.remediations else 0.0
+            match_score = (
+                lineage_score * 0.34
+                + shape_score * 0.38
+                + trigger_score * 0.16
+                + temporal_score * 0.07
+                + remediation_score * 0.05
+            )
+            recall_guard_score = (
+                (1.0 if lineage_score else 0.0) * 0.30
+                + sig_sim * 0.45
+                + trigger_score * 0.25
+            )
+            contributors["behavioral_signature"] = round(shape_score * 0.38, 3)
+            contributors["temporal_sequence"] = round(temporal_score * 0.07, 3)
+            contributors["remediation_transfer"] = round(remediation_score * 0.05, 3)
 
-            if score >= 0.25:
+            if max(match_score, recall_guard_score) >= 0.25:
                 matches.append({
+                    "incident_id": iid,
                     "past_incident_id": iid,
-                    "similarity": _confidence(score),
-                    "rationale": self._rationale(canonical, profile, sig_sim),
+                    "similarity": _confidence(match_score),
+                    "match_score": round(match_score, 3),
+                    "shape_score": round(shape_score, 3),
+                    "lineage_score": round(lineage_score, 3),
+                    "recall_guard_score": round(recall_guard_score, 3),
+                    "fallback_diversification": False,
+                    "rationale": self._rationale(canonical, profile, shape_score, live_cans if canonical else set()),
+                    "audit": {
+                        "matched_service_lineage": bool(canonical and canonical in live_cans),
+                        "lineage_candidates": sorted(live_cans),
+                        "matched_temporal_sequence": self._sequence_audit(tmp, profile),
+                        "matched_behavioral_signature": sig_audit,
+                        "matched_shape": shape_audit,
+                        "remediation_history": self._profile_remediation_audit(profile),
+                        "confidence_contributors": contributors,
+                    },
                 })
 
-        return sorted(matches, key=lambda m: (-m["similarity"], m["past_incident_id"]))[:5]
+        return self._rank_matches(matches, limit=5)
 
     @staticmethod
-    def _rationale(canonical: str, profile: "_IncidentProfile", sig_sim: float) -> str:
+    def _shape_score(current: "_IncidentProfile", historical: "_IncidentProfile") -> tuple[float, dict]:
+        cur = current.signature()
+        hist = historical.signature()
+        components = {
+            "has_deploy": 1.0 if cur.get("has_deploy") == hist.get("has_deploy") else 0.0,
+            "delay_bucket": 1.0 if cur.get("delay_bucket") == hist.get("delay_bucket") else 0.0,
+            "metric_class": _jaccard(cur.get("metric_class"), hist.get("metric_class")),
+            "log_class": _jaccard(cur.get("log_class"), hist.get("log_class")),
+            "trace_class": _jaccard(cur.get("trace_class"), hist.get("trace_class")),
+            "remediation_types": _jaccard(cur.get("remediation_types"), hist.get("remediation_types")),
+            "outcome_class": 1.0 if cur.get("outcome_class") == hist.get("outcome_class") else 0.0,
+        }
+        weights = {
+            "has_deploy": 1.0,
+            "delay_bucket": 2.0,
+            "metric_class": 2.5,
+            "log_class": 2.0,
+            "trace_class": 1.0,
+            "remediation_types": 0.5,
+            "outcome_class": 0.25,
+        }
+        score = sum(components[k] * weights[k] for k in weights) / sum(weights.values())
+        return score, {
+            "current_shape_key": cur.get("shape_key"),
+            "historical_shape_key": hist.get("shape_key"),
+            "exact_shape_key_match": cur.get("shape_key") == hist.get("shape_key"),
+            "components": {k: round(v, 3) for k, v in components.items()},
+        }
+
+    @staticmethod
+    def _rank_matches(matches: list[dict], limit: int) -> list[dict]:
+        ordered = sorted(
+            matches,
+            key=lambda m: (
+                -m.get("match_score", m.get("similarity", 0)),
+                -m.get("shape_score", 0),
+                -m.get("lineage_score", 0),
+                m["incident_id"],
+            ),
+        )
+        family_ids = {_incident_family(m.get("incident_id", "")) for m in ordered}
+        if len(family_ids) <= limit:
+            by_family: dict[object, list[dict]] = defaultdict(list)
+            for match in ordered:
+                by_family[_incident_family(match.get("incident_id", ""))].append(match)
+            out = []
+            for fam in sorted(
+                by_family,
+                key=lambda f: (-by_family[f][0].get("recall_guard_score", 0), -by_family[f][0].get("match_score", 0), str(f)),
+            ):
+                item = dict(by_family[fam][0])
+                item["fallback_diversification"] = item.get("match_score", 0.0) < 0.45
+                item.setdefault("audit", {}).setdefault("ranking", {})["fallback_reason"] = (
+                    "recall_guard_family_coverage" if item["fallback_diversification"] else ""
+                )
+                out.append(item)
+                if len(out) == limit:
+                    break
+            return out
+
+        out = []
+        used_ids = set()
+
+        def add(item, fallback: bool = False):
+            if item["incident_id"] in used_ids or len(out) >= limit:
+                return
+            item = dict(item)
+            item["fallback_diversification"] = fallback
+            item.setdefault("audit", {}).setdefault("ranking", {})["fallback_reason"] = (
+                "recall_guard_family_diversification" if fallback else ""
+            )
+            out.append(item)
+            used_ids.add(item["incident_id"])
+
+        for item in ordered:
+            if item.get("match_score", 0.0) >= 0.62:
+                add(item)
+        for item in ordered:
+            if item.get("match_score", 0.0) >= 0.45:
+                add(item)
+        if len(out) >= limit:
+            return out[:limit]
+
+        fallback_ordered = sorted(
+            [m for m in matches if m["incident_id"] not in used_ids],
+            key=lambda m: (-m.get("recall_guard_score", 0), -m.get("match_score", 0), m["incident_id"]),
+        )
+        by_family: dict[object, list[dict]] = defaultdict(list)
+        for match in fallback_ordered:
+            by_family[_incident_family(match.get("incident_id", ""))].append(match)
+        families = sorted(
+            by_family,
+            key=lambda fam: (-by_family[fam][0].get("recall_guard_score", 0), str(fam)),
+        )
+        for fam in families:
+            add(by_family[fam][0], fallback=True)
+
+        for item in fallback_ordered:
+            add(item, fallback=True)
+        return out
+
+    @staticmethod
+    def _rationale(canonical: str, profile: "_IncidentProfile", sig_sim: float, live_cans: set[str]) -> str:
         parts = []
         if canonical and canonical in profile.affected_canonical:
             parts.append("same canonical service")
+        elif canonical and canonical in live_cans:
+            parts.append("same service lineage after rename")
         if sig_sim >= 0.7:
             parts.append("high behavioral signature match")
         elif sig_sim >= 0.4:
@@ -632,6 +1104,44 @@ class Engine:
         if profile.resolved:
             parts.append("was resolved")
         return "; ".join(parts) if parts else "matched incident memory"
+
+    @staticmethod
+    def _sequence_audit(current: "_IncidentProfile", historical: "_IncidentProfile") -> dict:
+        cur = current.signature()
+        hist = historical.signature()
+        return {
+            "current_delay_bucket": cur.get("delay_bucket"),
+            "historical_delay_bucket": hist.get("delay_bucket"),
+            "delay_bucket_matched": cur.get("delay_bucket") == hist.get("delay_bucket"),
+            "current_has_deploy": cur.get("has_deploy"),
+            "historical_has_deploy": hist.get("has_deploy"),
+            "current_has_trace": cur.get("has_trace"),
+            "historical_has_trace": hist.get("has_trace"),
+        }
+
+    @staticmethod
+    def _profile_remediation_audit(profile: "_IncidentProfile") -> dict:
+        actions = Counter()
+        successes = failures = 0
+        latest = ""
+        for event in profile.remediations:
+            attrs = event.get("attributes", {})
+            action = str(attrs.get("action", "")).lower()
+            outcome = str(attrs.get("outcome", "")).lower()
+            if action:
+                actions[action] += 1
+            if outcome in ("resolved", "success", "worked"):
+                successes += 1
+            elif outcome == "failed":
+                failures += 1
+            latest = outcome or latest
+        return {
+            "actions": dict(actions),
+            "success_count": successes,
+            "failure_count": failures,
+            "latest_outcome": latest,
+            "resolved": profile.resolved,
+        }
 
     # ------------------------------------------------------------------
     # Internal: remediation ranking
@@ -663,14 +1173,30 @@ class Engine:
             elif outcome == "failed":
                 score -= 0.20
             age_days = max(0, (sig_ts - _parse_ts(rec["observed_at"])).days)
-            score *= max(0.55, 1.0 - (age_days / 365) * 0.25)
+            age_decay = max(0.55, 1.0 - (age_days / 365) * 0.25)
+            score *= age_decay
             # remap target to current service name
             target = rec.get("target", "")
             if svc and (rec_can == canonical or rec_tgt in low_aliases):
                 target = svc
             key = (rec.get("action", ""), target)
             item = {"action": key[0], "target": target,
-                    "historical_outcome": rec.get("outcome", ""), "confidence": _confidence(score)}
+                    "historical_outcome": rec.get("outcome", ""), "confidence": _confidence(score),
+                    "audit": {
+                        "basis_incident_id": rec.get("incident_id", ""),
+                        "same_lineage": bool(canonical and rec_can == canonical),
+                        "similar_incident_basis": rec.get("incident_id") in similar_ids,
+                        "success_count": 1 if outcome in ("resolved", "success", "worked") else 0,
+                        "failure_count": 1 if outcome == "failed" else 0,
+                        "age_days": age_days,
+                        "age_decay": round(age_decay, 3),
+                        "target_remapped": bool(target and target != rec.get("target", "")),
+                        "confidence_contributors": {
+                            "lineage_or_alias": 0.40 if canonical and rec_can == canonical else 0.30 if rec_tgt in low_aliases or rec_svc in low_aliases else 0.0,
+                            "similar_incident": 0.25 if rec.get("incident_id") in similar_ids else 0.0,
+                            "outcome": 0.15 if outcome in ("resolved", "success", "worked") else -0.20 if outcome == "failed" else 0.0,
+                        },
+                    }}
             if key not in grouped or item["confidence"] > grouped[key]["confidence"]:
                 grouped[key] = item
 
@@ -681,6 +1207,17 @@ class Engine:
             grouped[action, svc or "unknown"] = {
                 "action": action, "target": svc or "unknown",
                 "historical_outcome": "unknown", "confidence": 0.20,
+                "audit": {
+                    "basis_incident_id": "",
+                    "same_lineage": False,
+                    "similar_incident_basis": False,
+                    "success_count": 0,
+                    "failure_count": 0,
+                    "age_days": None,
+                    "age_decay": None,
+                    "target_remapped": False,
+                    "confidence_contributors": {"fallback": 0.20},
+                },
             }
         return sorted(grouped.values(), key=lambda r: (-r["confidence"], r["action"]))[:3]
 
@@ -690,29 +1227,11 @@ class Engine:
 
     @staticmethod
     def _is_anomaly_metric(ev: dict) -> bool:
-        a = ev.get("attributes", {})
-        name = str(a.get("name", "")).lower()
-        # error-rate style: value is a percentage string or float > threshold
-        val_raw = a.get("value", 0)
-        try:
-            val = float(str(val_raw).rstrip("%"))
-        except (TypeError, ValueError):
-            val = 0.0
-        if "error" in name or "failure" in name:
-            return val > 1.0  # >1% error rate
-        if "latency" in name or "p99" in name or "p95" in name or "ms" in name:
-            return val > 200  # >200ms
-        return val >= 1000  # generic spike
+        return _metric_is_anomaly(ev)
 
     @staticmethod
     def _is_failure_log(ev: dict) -> bool:
-        a = ev.get("attributes", {})
-        msg = str(a.get("msg", a.get("message", ""))).lower()
-        level = str(a.get("level", "")).lower()
-        return (
-            level in ("error", "fatal", "critical")
-            or any(k in msg for k in ("timeout", "refused", "error", "exception", "failed", "5xx", "500"))
-        )
+        return _log_is_failure(ev)
 
     # ------------------------------------------------------------------
     # Internal: explain
@@ -723,11 +1242,12 @@ class Engine:
         svc = sig.get("service_name") or sig.get("canonical_service_id") or "unknown service"
         parts = [f"Reconstructed {sig['incident_id'] or 'incident'} for {svc} using {len(related)} events"]
         if causal:
-            parts.append(f"{len(causal)} causal edges synthesized")
+            evidence = causal[0].get("evidence", ["causal evidence"])[0].replace("_", " ")
+            parts.append(f"{len(causal)} causal edges synthesized; strongest evidence is {evidence}")
         if similar:
             top = similar[0]
-            parts.append(f"closest match: {top['past_incident_id']} ({int(top['similarity']*100)}% similar)")
+            parts.append(f"closest match: {top['past_incident_id']} ({int(top['similarity']*100)}% similar: {top.get('rationale', 'matched memory')})")
         if remeds:
             r = remeds[0]
-            parts.append(f"top remediation: {r['action']} on {r['target']} (confidence {int(r['confidence']*100)}%)")
+            parts.append(f"top remediation: {r['action']} on {r['target']} because historical outcome was {r.get('historical_outcome', 'unknown')} (confidence {int(r['confidence']*100)}%)")
         return "; ".join(parts) + "."

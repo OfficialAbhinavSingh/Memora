@@ -72,13 +72,25 @@ npm run dev
 npm run build
 ```
 
-Benchmark adapter smoke check:
+Benchmark Execution (P-02 Official Setup):
 
 ```powershell
-python bench\worked_example_check.py
+# 1. Install standard testing dependencies
+pip install -r requirements.txt
+
+# 2. Run the fast official self-check
+python bench\self_check.py --adapter adapters.memora:Engine --quick
+
+# 3. Run the full multi-seed benchmark
+python bench\run.py --adapter adapters.memora:Engine --mode fast --seeds 9999 31415 27182 16180 11235 --n-services 20 --days 14 --out report.json
 ```
 
-The adapter is `bench.adapters.memora:Engine` and exposes the benchmark surface:
+**Dependency & Egress Disclosure**:
+- The `adapters.memora:Engine` relies **strictly on the Python standard library** for its core memory formation and scoring logic. 
+- It requires **NO outbound network connections** and **NO external LLMs** to operate.
+- Dependencies in `requirements.txt` (`pytest`, `pytest-benchmark`, etc.) are solely for the evaluation harness and local tests.
+
+The adapter exposes the exact benchmark surface expected by Anvil P-02:
 
 - `ingest(events)`
 - `reconstruct_context(signal, mode="fast")`

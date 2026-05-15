@@ -35,6 +35,30 @@ function EmptyPanel({ title, body }: { title: string; body: string }) {
   );
 }
 
+const DEMO_CONTEXT: ContextResponse = {
+  related_events: [
+    { event_id: 'evt-001', ts: new Date(Date.now() - 18 * 60000).toISOString(), kind: 'deploy', tenant_id: 'default', environment: 'prod', service_name: 'billing-svc', canonical_service_id: 'billing-svc', attributes: { version: 'v2.4.1' } },
+    { event_id: 'evt-002', ts: new Date(Date.now() - 15 * 60000).toISOString(), kind: 'metric', tenant_id: 'default', environment: 'prod', service_name: 'billing-svc', canonical_service_id: 'billing-svc', attributes: { name: 'error_rate', value: '8.3%' } },
+    { event_id: 'evt-003', ts: new Date(Date.now() - 13 * 60000).toISOString(), kind: 'trace', tenant_id: 'default', environment: 'prod', service_name: 'checkout-api', canonical_service_id: 'checkout-api', trace_id: 'trace-a1b2', attributes: { spans: 3 } },
+    { event_id: 'evt-004', ts: new Date(Date.now() - 10 * 60000).toISOString(), kind: 'log', tenant_id: 'default', environment: 'prod', service_name: 'billing-svc', canonical_service_id: 'billing-svc', attributes: { msg: 'connection pool exhausted: postgres timeout' } },
+    { event_id: 'evt-005', ts: new Date(Date.now() - 6 * 60000).toISOString(), kind: 'remediation', tenant_id: 'default', environment: 'prod', service_name: 'billing-svc', canonical_service_id: 'billing-svc', attributes: { action: 'rollback', target: 'billing-svc', outcome: 'resolved' } },
+  ],
+  causal_chain: [
+    { cause_id: 'evt-001', effect_id: 'evt-002', evidence: ['deploy within 30m window', 'error rate spike post-deploy'], confidence: 0.87 },
+    { cause_id: 'evt-002', effect_id: 'evt-003', evidence: ['upstream error propagation', 'trace latency increase'], confidence: 0.72 },
+  ],
+  similar_past_incidents: [
+    { past_incident_id: 'INC-588', similarity: 0.91, rationale: 'Same deploy trigger, billing-svc error-rate spike, resolved by rollback' },
+    { past_incident_id: 'INC-432', similarity: 0.74, rationale: 'Matched canonical lineage and post-deploy error shape' },
+  ],
+  suggested_remediations: [
+    { action: 'rollback', target: 'billing-svc', historical_outcome: 'resolved', confidence: 1.0 },
+    { action: 'scale-out', target: 'billing-svc', historical_outcome: 'partial', confidence: 0.61 },
+  ],
+  confidence: 0.87,
+  explain: 'Demo context — 5 related events, 2 causal edges. Deploy of billing-svc v2.4.1 triggered error-rate spike. Historical match: INC-588. Top remediation: rollback (confidence 100%). Click Reconstruct Context to fetch live data.',
+};
+
 export default function IncidentWorkspace() {
   const [incidentId, setIncidentId] = useState('INC-714');
   const [tenantId, setTenantId] = useState('default');
@@ -42,14 +66,16 @@ export default function IncidentWorkspace() {
   const [serviceName, setServiceName] = useState('billing-svc');
   const [trigger, setTrigger] = useState('alert:checkout-api/error-rate>5%');
   const [feedback, setFeedback] = useState<Record<number, string>>({});
-  const [context, setContext] = useState<ContextResponse | null>(null);
+  const [context, setContext] = useState<ContextResponse>(DEMO_CONTEXT);
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState('');
+  const [isDemo, setIsDemo] = useState(true);
 
-  const relatedEvents = context?.related_events ?? [];
-  const causalChain = context?.causal_chain ?? [];
-  const similarIncidents = context?.similar_past_incidents ?? [];
-  const remediations = context?.suggested_remediations ?? [];
+  const relatedEvents = context.related_events ?? [];
+  const causalChain = context.causal_chain ?? [];
+  const similarIncidents = context.similar_past_incidents ?? [];
+  const remediations = context.suggested_remediations ?? [];
+
 
   async function reconstruct() {
     setLoading(true);
@@ -65,8 +91,9 @@ export default function IncidentWorkspace() {
         trigger,
       });
       setContext(next);
+      setIsDemo(false);
     } catch (err) {
-      setApiError(err instanceof Error ? err.message : 'Could not reach the Context API');
+      setApiError(err instanceof Error ? err.message : 'Could not reach the Context API — showing demo data.');
     } finally {
       setLoading(false);
     }
@@ -125,15 +152,15 @@ export default function IncidentWorkspace() {
                 {apiError}
               </div>
             )}
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.7, padding: '10px 12px', background: 'var(--surface-low)', borderRadius: 'var(--radius)', borderLeft: '3px solid var(--accent)' }}>
-              {context?.explain ?? 'No reconstructed context yet. Start the Context API, ingest events, then run reconstruction.'}
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.7, padding: '10px 12px', background: 'var(--surface-low)', borderRadius: 'var(--radius)', borderLeft: `3px solid ${isDemo ? 'var(--amber)' : 'var(--accent)'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+              <span>{context.explain}</span>
+              {isDemo && <span className="badge badge-amber" style={{ flexShrink: 0 }}>DEMO</span>}
             </div>
-            {context && (
-              <div style={{ marginTop: 10, maxWidth: 220 }}>
-                <div className="text-xs text-muted" style={{ marginBottom: 4 }}>Confidence</div>
-                <ConfBar value={percent(context.confidence)} />
-              </div>
-            )}
+            <div style={{ marginTop: 10, maxWidth: 220 }}>
+              <div className="text-xs text-muted" style={{ marginBottom: 4 }}>Confidence</div>
+              <ConfBar value={percent(context.confidence)} />
+            </div>
+
           </div>
 
           <div className="panel" style={{ overflow: 'hidden' }}>

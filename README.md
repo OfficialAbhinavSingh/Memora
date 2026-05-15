@@ -1,5 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Anvil-P--02-blueviolet?style=for-the-badge" alt="Anvil P-02" />
+  <img src="https://img.shields.io/badge/L3_final-0.3039_%2F_0.80-orange?style=for-the-badge" alt="L3 Final 0.3039/0.80" />
   <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.10+" />
   <img src="https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go 1.21+" />
   <img src="https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React 18" />
@@ -45,55 +46,67 @@ Unlike embedding-based retrieval or keyword-matching systems, Memora forms struc
 
 ## 📊 Benchmark Results
 
-> **Anvil P-02 Benchmark** — Corrected ground-truth alignment, 29 seeds, 5 difficulty tiers
+> **Anvil P-02 · L3 Final Benchmark** — `anvil-2026-p02-L3-final` · the only bench that counts for evaluation
+>
+> Generator: 30 services · 21 days · 80 topology mutations (cascading renames **ON**) · 60 train + 25 eval incidents · 8 families · 20 % decoy rate
+>
+> Seeds (public placeholders, Council swaps at T-2h): `[314159, 271828, 161803, 141421, 173205]`
 
 <table>
 <tr>
 <td>
 
-### Aggregate Metrics
+### L3 Aggregate
 
 | Metric | Score |
 |:---|:---:|
-| **recall@5** | **1.000** |
-| **precision@5** | **0.818** |
-| **remediation_acc** | **1.000** |
-| **latency_p95** | **78 ms** |
-| **Weighted Automated** | **0.769 / 0.80** |
+| **recall@5** | **0.144** |
+| **precision@5_mean** | **0.141** |
+| **remediation_acc** | **0.448** |
+| **latency_p95** | **62 ms** |
+| **latency_mean** | **45 ms** |
+| **Weighted Automated** | **0.3039 / 0.8000** |
 
 </td>
 <td>
 
-### Per-Tier Breakdown
+### Per-Seed Breakdown (5 seeds × 25 signals)
 
-| Tier | Svcs | Days | Seeds | R@5 | P@5 | Score |
-|:---|:---:|:---:|:---:|:---:|:---:|:---:|
-| Quick | 6 | 2 | 2 | 1.000 | 0.580 | 0.737 |
-| Standard | 12 | 7 | 5 | 1.000 | 0.780 | 0.767 |
-| Competition | 20 | 14 | 5 | 1.000 | 0.904 | 0.786 |
-| Stress | 30 | 21 | 7 | 1.000 | 0.869 | 0.780 |
-| Adversarial | 20 | 14 | 10 | 1.000 | 0.818 | 0.773 |
+| Seed | R@5 | P@5 | Rem | p95 (ms) |
+|:---:|:---:|:---:|:---:|:---:|
+| 314159 | 0.120 | 0.120 | 0.440 | 47 |
+| 271828 | 0.080 | 0.080 | 0.400 | 47 |
+| 161803 | 0.200 | 0.200 | 0.640 | 47 |
+| 141421 | 0.160 | 0.152 | 0.360 | 62 |
+| 173205 | 0.160 | 0.152 | 0.400 | 47 |
 
 </td>
 </tr>
 </table>
 
-**Notable per-seed peaks:** Seeds 404, 9999, 99999, 173205080 achieve **precision@5 = 1.000** (every returned incident is correct family).
-
-> **Latency budget:** Fast mode requires < 2000 ms p95. Memora achieves **78 ms worst-case** — **25x headroom**.
+> **Latency budget:** `fast` mode allows ≤ 2000 ms p95. Memora's worst-seed p95 is **62 ms** — **~32× headroom**, so the latency axis lands at the full **1.000**.
 
 <details>
-<summary><b>Scoring weights (official Anvil P-02)</b></summary>
+<summary><b>Official scoring weights (anvil-2026-p02-L3-final)</b></summary>
 
 | Axis | Weight | Memora Score | Contribution |
 |:---|:---:|:---:|:---:|
-| recall@5 | 0.30 | 1.000 | 0.300 |
-| precision@5_mean | 0.15 | 0.818 | 0.123 |
-| remediation_acc | 0.20 | 1.000 | 0.200 |
-| latency_p95 vs budget | 0.15 | 1.000 | 0.150 |
+| recall@5 | 0.30 | 0.1440 | 0.0432 |
+| precision@5_mean | 0.15 | 0.1408 | 0.0211 |
+| remediation_acc | 0.20 | 0.4480 | 0.0896 |
+| latency_p95 vs budget | 0.15 | 1.0000 | 0.1500 |
 | manual_context | 0.10 | *(panel)* | — |
 | manual_explain | 0.10 | *(panel)* | — |
-| **Total Automated** | **0.80** | | **0.769** |
+| **Total Automated** | **0.80** | | **0.3039** |
+
+`recall@5` and `precision@5_mean` are weighed down by two L3-specific stressors: cascading renames (a single service can be renamed 2–4 times across the 21-day timeline) and 20 % decoy signals (which the harness penalises if matched with similarity ≥ 0.5). Latency and remediation transfer remain strong.
+
+</details>
+
+<details>
+<summary><b>Internal regression — easier non-L3 seeds (for iteration only)</b></summary>
+
+The in-repo `bench/custom_benchmark.py` (29 seeds across 5 tiers, *no* cascading renames, *no* decoys, corrected ground-truth alignment) reports **0.769 / 0.80** — useful for fast local iteration, **not** the evaluated number. Submission grading uses `python run.py` only.
 
 </details>
 
@@ -165,15 +178,16 @@ The benchmark adapter is **stdlib-only Python** — no pip install, no Docker, n
 python bench/worked_example_check.py
 python bench/regression_check.py
 
-# Official Anvil P-02 harness (place bench-p02-context/ in repo root)
+# Official Anvil P-02 · L3 Final Benchmark (place bench-p02-context/ in repo root)
 cd bench-p02-context
-python self_check.py --adapter adapters.memora:Engine --quick
+pip install -r requirements.txt   # numpy
 
-# Full multi-seed run
-python run.py --adapter adapters.memora:Engine --mode fast \
-  --seeds 9999 31415 27182 16180 11235 \
-  --n-services 20 --days 14 --out report.json
+# L3 final — single command, fixed L3 seeds, locked stretch generator config.
+# The output JSON is the submission artifact.
+python run.py --adapter adapters.memora:Engine --out l3_report.json
 ```
+
+Look for the `★★★ A N V I L · P-02 · L3 FINAL BENCH ★★★` banner (release tag `anvil-2026-p02-L3-final`); if it isn't there you're on an outdated copy of the bench.
 
 ### Custom L3-Style Benchmark
 
@@ -325,10 +339,11 @@ Historical remediation outcomes are transferred with age decay, success reinforc
 
 | Test Suite | Command | What It Validates |
 |:---|:---|:---|
+| **L3 Final Bench (evaluated)** | `cd bench-p02-context && python run.py --adapter adapters.memora:Engine --out l3_report.json` | The only bench that counts — `anvil-2026-p02-L3-final` stretch config across 5 official seeds |
 | Worked Example | `python bench/worked_example_check.py` | Rename continuity, causal chain synthesis, remediation ranking |
 | Regression Suite | `python bench/regression_check.py` | 11 invariants: schema, scoring, fallback, shape matching |
-| Official Harness | `python self_check.py --adapter adapters.memora:Engine` | Multi-seed recall, precision, remediation, latency |
-| Custom Benchmark | `python bench/custom_benchmark.py` | 5-tier L3-style eval: 6→50 services, 2→21 days, 29 seeds |
+| L2 Self-Check | `cd bench-p02-context && python self_check.py --adapter adapters.memora:Engine --quick` | Multi-seed recall, precision, remediation, latency on L2 config |
+| Internal Regression | `python bench/custom_benchmark.py` | In-repo 5-tier eval (no decoys / no cascading renames); not the evaluated number |
 | Go Unit Tests | `cd services/context-api && go test ./...` | Chained renames, rollback history, feedback decay |
 
 ---

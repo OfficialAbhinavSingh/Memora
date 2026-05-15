@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, History, GitBranch, Network, Zap,
-  ShieldCheck, Activity, Share2,
+  ShieldCheck, Activity, Share2, BarChart3,
 } from 'lucide-react';
 import './AppShell.css';
 
@@ -13,6 +13,7 @@ const NAV = [
   { to: '/similar',    label: 'Similar Incidents',  icon: Network },
   { to: '/remediations', label: 'Remediations',     icon: Zap },
   { to: '/topology',   label: 'Topology Aliases',   icon: Share2 },
+  { to: '/benchmark',  label: 'Benchmark Results',  icon: BarChart3 },
   { to: '/health',     label: 'System Health',      icon: ShieldCheck },
 ];
 

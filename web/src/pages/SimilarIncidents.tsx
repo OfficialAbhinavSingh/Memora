@@ -77,6 +77,41 @@ export default function SimilarIncidents() {
                 {SIGNALS.map(s => <span key={s} className="badge badge-blue">{s}</span>)}
               </div>
 
+              <div className="panel" style={{ padding: 14, marginBottom: 16 }}>
+                <div className="section-label" style={{ marginBottom: 10 }}>Memory Provenance</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+                  <div>
+                    <div className="text-xs text-muted" style={{ marginBottom: 4 }}>Lineage proof</div>
+                    <div className="mono text-xs">payments-svc {'->'} billing-svc</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted" style={{ marginBottom: 4 }}>Temporal proof</div>
+                    <div className="mono text-xs">deploy precedes latency spike</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted" style={{ marginBottom: 4 }}>Confidence basis</div>
+                    <div className="mono text-xs">lineage + behavior + outcome</div>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 8, marginTop: 12 }}>
+                  {[
+                    ['Match', '85%'],
+                    ['Shape', '60%'],
+                    ['Lineage', '100%'],
+                    ['Temporal', '100%'],
+                    ['Fallback', 'No'],
+                  ].map(([label, value]) => (
+                    <div key={label} style={{ padding: 8, background: 'var(--surface-low)', borderRadius: 'var(--radius)' }}>
+                      <div className="text-xs text-muted" style={{ marginBottom: 4 }}>{label}</div>
+                      <div className="mono text-xs" style={{ color: value === 'No' ? 'var(--green)' : 'var(--text-heading)' }}>{value}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ marginTop: 12, padding: 10, background: 'var(--surface-low)', borderRadius: 'var(--radius)', fontSize: 12, lineHeight: 1.6, color: 'var(--text-body)' }}>
+                  Why top-5 changed: the engine now ranks true behavioral cohorts first, then uses family coverage only as an explicit recall guard. This match is not a fallback; it is supported by service lineage, deploy-to-anomaly timing, latency/error classes, and resolved rollback history.
+                </div>
+              </div>
+
               <div className="panel" style={{ padding: 14, borderColor: 'rgba(34,197,94,0.3)' }}>
                 <div className="section-label" style={{ color: 'var(--green)', marginBottom: 8 }}>Remediation Transferred from {sel.id}</div>
                 <div style={{ fontSize: 12, marginBottom: 8, lineHeight: 1.6 }}>Rollback resolved {sel.id} in 8 minutes with zero recurrence in 90 days.</div>

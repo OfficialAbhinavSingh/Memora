@@ -9,6 +9,7 @@ import SimilarIncidents from './pages/SimilarIncidents';
 import Remediations from './pages/Remediations';
 import TopologyAliases from './pages/TopologyAliases';
 import SystemHealth from './pages/SystemHealth';
+import BenchmarkResults from './pages/BenchmarkResults';
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
         <Route path="/similar"      element={<SimilarIncidents />} />
         <Route path="/remediations" element={<Remediations />} />
         <Route path="/topology"     element={<TopologyAliases />} />
+        <Route path="/benchmark"    element={<BenchmarkResults />} />
         <Route path="/health"       element={<SystemHealth />} />
       </Routes>
     </AppShell>

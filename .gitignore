@@ -3,3 +3,9 @@ dist/
 __pycache__/
 .DS_Store
 *.log
+*.exe
+report*.json
+!web/public/benchmark-report.json
+bench-p02-context/
+official-harness/
+.docker-config/

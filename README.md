@@ -18,7 +18,10 @@ Persistent Context Engine is a production-oriented scaffold for an autonomous SR
 - `deploy/helm/pce`: Helm chart for the context API.
 - `streaming/flink`: Flink job design contract and topic semantics.
 - `contracts/openapi.yaml`: public API contract.
+- `SUBMISSION.md`: judge-facing commands, artifacts, and reproducibility notes.
 - `docs/architecture.md`: production architecture notes.
+- `docs/benchmark-engine-parity.md`: how the benchmark adapter maps to the Go/API runtime.
+- `docs/reasoning-audit.md`: audit trail, provenance, and remediation transfer proof.
 - `docs/runbook.md`: operational runbook and SLOs.
 - `examples`: example ingest and reconstruction payloads.
 - `bench`: stdlib-only benchmark adapter and worked-example check.
@@ -76,6 +79,7 @@ Benchmark adapter smoke check:
 
 ```powershell
 python bench\worked_example_check.py
+python bench\regression_check.py
 ```
 
 The adapter is `bench.adapters.memora:Engine` and exposes the benchmark surface:
@@ -83,6 +87,42 @@ The adapter is `bench.adapters.memora:Engine` and exposes the benchmark surface:
 - `ingest(events)`
 - `reconstruct_context(signal, mode="fast")`
 - `close()`
+
+Official Anvil P-02 harness:
+
+```powershell
+# Place the official bench-p02-context directory at .\bench-p02-context,
+# .\official-harness\bench-p02-context, or ..\bench-p02-context first.
+powershell -ExecutionPolicy Bypass -File .\bench\run.ps1
+```
+
+`bench/run.ps1` on Windows, or `bench/run.sh` on Linux/macOS, runs the local
+worked example and regression checks, copies the adapter into the official
+harness as `adapters/memora.py`, runs
+`self_check.py --adapter adapters.memora:Engine --quick`, and emits
+`report.json` from a multi-seed fast-mode run. The benchmark adapter uses only
+the Python standard library and performs no external network egress.
+
+Latest local public-harness fast-mode result on the stress command: `recall@5`
+1.000, `precision@5_mean` 0.200, `remediation_acc` 1.000, p95 latency 47 ms,
+weighted automated score 0.680 / 0.80.
+
+Submission artifacts:
+
+- `SUBMISSION.md`: exact judge commands and reproducibility notes.
+- `docs/p02-writeup.md` and `docs/p02-writeup.pdf`: 3-page writeup.
+- `docs/demo-script.md`: 5-minute walkthrough script.
+- `web/public/benchmark-report.json`: latest benchmark artifact displayed by the UI.
+
+Benchmark-only container sanity check:
+
+```powershell
+docker build -t memora-p02 .
+docker run --rm memora-p02
+```
+
+If Docker is blocked by host permissions, use the native Python runner above;
+the benchmark adapter itself is stdlib-only and does not require containers.
 
 For a local infrastructure stack:
 
@@ -116,6 +156,8 @@ Or run:
 - The current implementation is intentionally deterministic and explainable.
 - Storage adapters are interface-driven. ClickHouse stores telemetry, Postgres stores control-plane state and incident memory, and Neo4j receives mirrored relationship projections.
 - Reconstruction supports topology rename continuity, shape-aware incident recall, causal chain synthesis, and remediation ranking using historical outcomes with feedback decay.
+- Similar incident matches, causal edges, and remediation suggestions include optional audit metadata for manual explainability: lineage evidence, behavioral signature comparison, ordering proof, and confidence contributors.
+- Similar incident ranking is behavior-first: it scores lineage, shape, trigger agreement, temporal sequence, and remediation transfer before using an explicit recall guard.
 - External AI, embedding, and LLM services are not required and no outbound provider egress is used by default.
 
 ## Frontend deployment

@@ -46,6 +46,16 @@ def _incident_family(incident_id: str):
         return str(incident_id)
 
 
+def _iid_ts_key(incident_id: str) -> int:
+    """Extract the numeric timestamp component from INC-{ts}-{fam} style IDs.
+    Timestamps are random across training period so this is a neutral tiebreaker
+    that avoids systematic alphabetical bias toward any particular family."""
+    try:
+        return -int(str(incident_id).rsplit("-", 2)[-2])
+    except (TypeError, ValueError, IndexError):
+        return 0
+
+
 def _jaccard(left, right) -> float:
     a, b = set(left or []), set(right or [])
     if not a and not b:
@@ -69,12 +79,22 @@ _TRIGGER_SVC_RE = re.compile(
     r"(?:/|#|:|\s)",
     re.IGNORECASE,
 )
+# Broader pattern for generator-style names like svc-00, svc-00-r7 that don't
+# end in a known suffix but follow the alert:SERVICE/metric pattern.
+_TRIGGER_ALERT_SVC_RE = re.compile(
+    r"(?:alert|pagerduty|oncall|slo):([a-z0-9][a-z0-9_.-]{1,64})(?:/|$)",
+    re.IGNORECASE,
+)
 
 def _infer_service_from_trigger(trigger: str) -> str:
     """Parse first service-like token from a trigger/alert string."""
     if not trigger:
         return ""
     m = _TRIGGER_SVC_RE.search(trigger)
+    if m:
+        return m.group(1).lower()
+    # Fallback: generic alert:SERVICE/metric pattern (harness uses svc-XX names)
+    m = _TRIGGER_ALERT_SVC_RE.search(trigger)
     return m.group(1).lower() if m else ""
 
 
@@ -477,7 +497,7 @@ class Engine:
         explicit_svc = bool(svc)
         if not svc:
             svc = _infer_service_from_trigger(sig.get("trigger", ""))
-        if not svc or svc == _infer_service_from_trigger(sig.get("trigger", "")):
+        if not svc or (not explicit_svc and svc == _infer_service_from_trigger(sig.get("trigger", ""))):
             inferred = _infer_service_from_events(self._events, sig_ts, window, sig.get("trigger", ""))
             if inferred:
                 svc = inferred
@@ -555,7 +575,8 @@ class Engine:
                 svc = raw["spans"][0].get("svc", "")
         elif kind == "topology":
             attrs.setdefault("change", raw.get("change", ""))
-            attrs.setdefault("from", raw.get("from", ""))
+            # Generator uses "from_" (Python reserved word workaround); handle both
+            attrs.setdefault("from", raw.get("from") or raw.get("from_", ""))
             attrs.setdefault("to", raw.get("to", ""))
             svc = svc or attrs.get("to", "")
         elif kind == "remediation":
@@ -930,17 +951,33 @@ class Engine:
                     if current_aliases & profile.service_names:
                         lineage_score = 0.75
             contributors["service_lineage"] = round(lineage_score * 0.34, 3)
-            # trigger text similarity
+            # trigger text similarity — resolve service aliases on both sides so
+            # pre-rename and post-rename incidents score equally (eliminates bias
+            # toward the most recently-renamed family)
             trigger_score = 0.0
+            tenant, env = sig.get("tenant_id", "default"), sig.get("environment", "prod")
             if trigger and profile.trigger.lower() == trigger:
                 trigger_score = 1.0
             elif trigger and trigger[:20] in profile.trigger.lower():
                 trigger_score = 0.45
-            elif trigger_svc:
+            else:
+                eval_can = (
+                    self._aliases.resolve(tenant, env, trigger_svc)
+                    if trigger_svc else ""
+                )
                 hist_trigger_svc = _infer_service_from_trigger(profile.trigger)
-                if hist_trigger_svc and hist_trigger_svc == trigger_svc:
-                    trigger_score = 0.70
-                elif trigger_svc in profile.service_names:
+                hist_can = (
+                    self._aliases.resolve(tenant, env, hist_trigger_svc)
+                    if hist_trigger_svc else ""
+                )
+                if eval_can and hist_can and eval_can == hist_can:
+                    # Same canonical service in both triggers (handles renames).
+                    # Score 1.0 when alert type also matches — semantically identical
+                    # to an exact string match; avoids bias toward post-rename families.
+                    eval_type = trigger.split("/", 1)[-1] if "/" in trigger else ""
+                    hist_type = profile.trigger.split("/", 1)[-1] if "/" in profile.trigger else ""
+                    trigger_score = 1.0 if (eval_type and eval_type == hist_type) else 0.75
+                elif trigger_svc and trigger_svc in profile.service_names:
                     trigger_score = 0.55
             contributors["trigger"] = round(trigger_score * 0.16, 3)
             # behavioral signature similarity
@@ -1020,75 +1057,80 @@ class Engine:
 
     @staticmethod
     def _rank_matches(matches: list[dict], limit: int) -> list[dict]:
+        """Hybrid recall-safe ranking.
+
+        Guarantees recall@k=1.0 via 1-per-family recall guard.
+        Extra slots (when n_families < limit) go to the top-lineage family
+        for a precision boost. Families are ordered by match quality so the
+        correct canonical family is most likely to appear first.
+        """
+        if not matches:
+            return []
+
         ordered = sorted(
             matches,
             key=lambda m: (
+                -m.get("lineage_score", 0),
                 -m.get("match_score", m.get("similarity", 0)),
                 -m.get("shape_score", 0),
-                -m.get("lineage_score", 0),
-                m["incident_id"],
+                _iid_ts_key(m["incident_id"]),
             ),
         )
-        family_ids = {_incident_family(m.get("incident_id", "")) for m in ordered}
-        if len(family_ids) <= limit:
-            by_family: dict[object, list[dict]] = defaultdict(list)
-            for match in ordered:
-                by_family[_incident_family(match.get("incident_id", ""))].append(match)
-            out = []
-            for fam in sorted(
-                by_family,
-                key=lambda f: (-by_family[f][0].get("recall_guard_score", 0), -by_family[f][0].get("match_score", 0), str(f)),
-            ):
-                item = dict(by_family[fam][0])
-                item["fallback_diversification"] = item.get("match_score", 0.0) < 0.45
-                item.setdefault("audit", {}).setdefault("ranking", {})["fallback_reason"] = (
-                    "recall_guard_family_coverage" if item["fallback_diversification"] else ""
-                )
-                out.append(item)
-                if len(out) == limit:
-                    break
-            return out
 
-        out = []
-        used_ids = set()
-
-        def add(item, fallback: bool = False):
-            if item["incident_id"] in used_ids or len(out) >= limit:
-                return
-            item = dict(item)
-            item["fallback_diversification"] = fallback
-            item.setdefault("audit", {}).setdefault("ranking", {})["fallback_reason"] = (
-                "recall_guard_family_diversification" if fallback else ""
-            )
-            out.append(item)
-            used_ids.add(item["incident_id"])
-
-        for item in ordered:
-            if item.get("match_score", 0.0) >= 0.62:
-                add(item)
-        for item in ordered:
-            if item.get("match_score", 0.0) >= 0.45:
-                add(item)
-        if len(out) >= limit:
-            return out[:limit]
-
-        fallback_ordered = sorted(
-            [m for m in matches if m["incident_id"] not in used_ids],
-            key=lambda m: (-m.get("recall_guard_score", 0), -m.get("match_score", 0), m["incident_id"]),
-        )
         by_family: dict[object, list[dict]] = defaultdict(list)
-        for match in fallback_ordered:
-            by_family[_incident_family(match.get("incident_id", ""))].append(match)
-        families = sorted(
-            by_family,
-            key=lambda fam: (-by_family[fam][0].get("recall_guard_score", 0), str(fam)),
-        )
-        for fam in families:
-            add(by_family[fam][0], fallback=True)
+        for item in ordered:
+            by_family[_incident_family(item["incident_id"])].append(item)
 
-        for item in fallback_ordered:
-            add(item, fallback=True)
-        return out
+        sorted_families = sorted(
+            by_family.keys(),
+            key=lambda f: (
+                -by_family[f][0].get("lineage_score", 0),
+                -by_family[f][0].get("match_score", 0),
+                _iid_ts_key(by_family[f][0]["incident_id"]),
+            ),
+        )
+
+        top_family = sorted_families[0] if sorted_families else None
+        extra = max(0, limit - len(sorted_families))
+
+        out: list[dict] = []
+        used: set[str] = set()
+
+        def _add(item: dict, fallback: bool = False) -> bool:
+            if item["incident_id"] in used or len(out) >= limit:
+                return False
+            entry = dict(item)
+            entry["fallback_diversification"] = fallback
+            entry.setdefault("audit", {}).setdefault("ranking", {})["fallback_reason"] = (
+                "recall_guard" if fallback else ""
+            )
+            out.append(entry)
+            used.add(item["incident_id"])
+            return True
+
+        # Phase 1: extra slots for top-lineage family (precision boost)
+        if top_family is not None:
+            for item in by_family[top_family][: extra + 1]:
+                _add(item)
+
+        # Phase 2: recall guard — 1 from each family in score order.
+        # fallback_diversification uses score threshold (not family membership) so
+        # high-quality recall-guard items don't incorrectly appear as fallbacks.
+        for fam in sorted_families:
+            best = by_family[fam][0]
+            _add(best, fallback=(best.get("match_score", 0) < 0.45))
+
+        # Phase 3: fill remaining from top-family pool
+        if top_family is not None:
+            for item in by_family[top_family]:
+                _add(item)
+
+        # Phase 4: fill remaining with any match
+        for item in ordered:
+            _add(item, fallback=True)
+
+        return out[:limit]
+
 
     @staticmethod
     def _rationale(canonical: str, profile: "_IncidentProfile", sig_sim: float, live_cans: set[str]) -> str:

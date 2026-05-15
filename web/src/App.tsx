@@ -10,6 +10,7 @@ import Remediations from './pages/Remediations';
 import TopologyAliases from './pages/TopologyAliases';
 import SystemHealth from './pages/SystemHealth';
 import BenchmarkResults from './pages/BenchmarkResults';
+import GraphVisualization from './pages/GraphVisualization';
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
         <Route path="/remediations" element={<Remediations />} />
         <Route path="/topology"     element={<TopologyAliases />} />
         <Route path="/benchmark"    element={<BenchmarkResults />} />
+        <Route path="/graphs"       element={<GraphVisualization />} />
         <Route path="/health"       element={<SystemHealth />} />
       </Routes>
     </AppShell>

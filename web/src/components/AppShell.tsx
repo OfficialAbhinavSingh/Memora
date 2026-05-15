@@ -14,6 +14,7 @@ const NAV = [
   { to: '/remediations', label: 'Remediations',     icon: Zap },
   { to: '/topology',   label: 'Topology Aliases',   icon: Share2 },
   { to: '/benchmark',  label: 'Benchmark Results',  icon: BarChart3 },
+  { to: '/graphs',     label: 'Knowledge Graphs',   icon: Network },
   { to: '/health',     label: 'System Health',      icon: ShieldCheck },
 ];
 

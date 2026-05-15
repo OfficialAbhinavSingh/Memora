@@ -275,9 +275,9 @@ func stableID(event domain.Event) string {
 
 func (e *Engine) rankRelatedEvents(signal domain.IncidentSignal, events []domain.Event) []domain.Event {
 	type scored struct {
-		event  domain.Event
-		score  float64
-		delta  time.Duration
+		event domain.Event
+		score float64
+		delta time.Duration
 	}
 
 	var scoredEvents []scored

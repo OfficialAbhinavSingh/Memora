@@ -111,10 +111,10 @@ func (s *GraphStore) StoreIncidentMemory(memory domain.IncidentMemory) error {
 			MERGE (cause)-[r:CAUSES]->(effect)
 			SET r.confidence = $confidence, r.evidence = $evidence
 		`, map[string]any{
-			"cause_id":    edge.CauseID,
-			"effect_id":   edge.EffectID,
-			"confidence":  edge.Confidence,
-			"evidence":    strings.Join(edge.Evidence, ","),
+			"cause_id":   edge.CauseID,
+			"effect_id":  edge.EffectID,
+			"confidence": edge.Confidence,
+			"evidence":   strings.Join(edge.Evidence, ","),
 		})
 	}
 	for _, remediation := range memory.Context.SuggestedRemediations {
@@ -124,11 +124,11 @@ func (s *GraphStore) StoreIncidentMemory(memory domain.IncidentMemory) error {
 			MERGE (i)-[rel:SUGGESTS]->(r)
 			SET rel.confidence = $confidence, rel.historical_outcome = $historical_outcome
 		`, map[string]any{
-			"incident_id":         memory.Signal.IncidentID,
-			"action":              remediation.Action,
-			"target":              remediation.Target,
-			"confidence":          remediation.Confidence,
-			"historical_outcome":  remediation.HistoricalOutcome,
+			"incident_id":        memory.Signal.IncidentID,
+			"action":             remediation.Action,
+			"target":             remediation.Target,
+			"confidence":         remediation.Confidence,
+			"historical_outcome": remediation.HistoricalOutcome,
 		})
 	}
 	return nil

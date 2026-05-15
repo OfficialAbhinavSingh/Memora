@@ -9,10 +9,10 @@ import (
 )
 
 type GraphStore struct {
-	mu            sync.RWMutex
-	canonical     map[string]string
-	adjacency     map[string]map[string]struct{}
-	incidentByID  map[string]domain.IncidentMemory
+	mu           sync.RWMutex
+	canonical    map[string]string
+	adjacency    map[string]map[string]struct{}
+	incidentByID map[string]domain.IncidentMemory
 }
 
 func NewGraphStore() *GraphStore {

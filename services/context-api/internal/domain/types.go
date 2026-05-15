@@ -10,19 +10,19 @@ const (
 )
 
 type Event struct {
-	EventID            string                 `json:"event_id"`
-	TS                 time.Time              `json:"ts"`
-	Kind               string                 `json:"kind"`
-	TenantID           string                 `json:"tenant_id"`
-	Environment        string                 `json:"environment"`
-	ServiceName        string                 `json:"service_name,omitempty"`
-	CanonicalServiceID string                 `json:"canonical_service_id,omitempty"`
-	IncidentID         string                 `json:"incident_id,omitempty"`
-	TraceID            string                 `json:"trace_id,omitempty"`
-	Entities           []string               `json:"entities,omitempty"`
-	Attributes         map[string]any         `json:"attributes,omitempty"`
-	RawRef             string                 `json:"raw_ref,omitempty"`
-	Provenance         map[string]any         `json:"provenance,omitempty"`
+	EventID            string         `json:"event_id"`
+	TS                 time.Time      `json:"ts"`
+	Kind               string         `json:"kind"`
+	TenantID           string         `json:"tenant_id"`
+	Environment        string         `json:"environment"`
+	ServiceName        string         `json:"service_name,omitempty"`
+	CanonicalServiceID string         `json:"canonical_service_id,omitempty"`
+	IncidentID         string         `json:"incident_id,omitempty"`
+	TraceID            string         `json:"trace_id,omitempty"`
+	Entities           []string       `json:"entities,omitempty"`
+	Attributes         map[string]any `json:"attributes,omitempty"`
+	RawRef             string         `json:"raw_ref,omitempty"`
+	Provenance         map[string]any `json:"provenance,omitempty"`
 }
 
 type IncidentSignal struct {
@@ -57,12 +57,12 @@ type Remediation struct {
 }
 
 type Context struct {
-	RelatedEvents         []Event          `json:"related_events"`
-	CausalChain           []CausalEdge     `json:"causal_chain"`
-	SimilarPastIncidents  []IncidentMatch  `json:"similar_past_incidents"`
-	SuggestedRemediations []Remediation    `json:"suggested_remediations"`
-	Confidence            float64          `json:"confidence"`
-	Explain               string           `json:"explain"`
+	RelatedEvents         []Event         `json:"related_events"`
+	CausalChain           []CausalEdge    `json:"causal_chain"`
+	SimilarPastIncidents  []IncidentMatch `json:"similar_past_incidents"`
+	SuggestedRemediations []Remediation   `json:"suggested_remediations"`
+	Confidence            float64         `json:"confidence"`
+	Explain               string          `json:"explain"`
 }
 
 type ReconstructRequest struct {

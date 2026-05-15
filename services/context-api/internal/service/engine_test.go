@@ -44,12 +44,12 @@ func TestReconstructAcrossRenameAndRollbackHistory(t *testing.T) {
 
 	_, err = engine.Reconstruct(domain.ReconstructRequest{
 		Signal: domain.IncidentSignal{
-			IncidentID:   "INC-700",
-			TS:           base.Add(11 * time.Minute),
-			TenantID:     "t1",
-			Environment:  "prod",
-			ServiceName:  "payments-svc",
-			Trigger:      "alert:payments/error-rate",
+			IncidentID:  "INC-700",
+			TS:          base.Add(11 * time.Minute),
+			TenantID:    "t1",
+			Environment: "prod",
+			ServiceName: "payments-svc",
+			Trigger:     "alert:payments/error-rate",
 		},
 		Mode: domain.ModeFast,
 	})
@@ -59,12 +59,12 @@ func TestReconstructAcrossRenameAndRollbackHistory(t *testing.T) {
 
 	context, err := engine.Reconstruct(domain.ReconstructRequest{
 		Signal: domain.IncidentSignal{
-			IncidentID:   "INC-714",
-			TS:           base.Add(24 * time.Minute),
-			TenantID:     "t1",
-			Environment:  "prod",
-			ServiceName:  "billing-svc",
-			Trigger:      "alert:checkout-api/error-rate>5%",
+			IncidentID:  "INC-714",
+			TS:          base.Add(24 * time.Minute),
+			TenantID:    "t1",
+			Environment: "prod",
+			ServiceName: "billing-svc",
+			Trigger:     "alert:checkout-api/error-rate>5%",
 		},
 		Mode: domain.ModeFast,
 	})
@@ -92,12 +92,12 @@ func TestGetIncidentMemory(t *testing.T) {
 
 	_, err := engine.Reconstruct(domain.ReconstructRequest{
 		Signal: domain.IncidentSignal{
-			IncidentID:   "INC-1",
-			TS:           time.Now().UTC(),
-			TenantID:     "t1",
-			Environment:  "prod",
-			ServiceName:  "api",
-			Trigger:      "alert:test",
+			IncidentID:  "INC-1",
+			TS:          time.Now().UTC(),
+			TenantID:    "t1",
+			Environment: "prod",
+			ServiceName: "api",
+			Trigger:     "alert:test",
 		},
 		Mode: domain.ModeFast,
 	})

@@ -266,6 +266,15 @@ class Engine:
             if iid := ev.get("incident_id"):
                 self._by_incident[iid].append(ev)
                 self._update_profile(iid, ev)
+            # incident_signal: bootstrap the profile with trigger and service
+            if ev["kind"] == "incident_signal":
+                iid = ev.get("incident_id") or _stable_id(ev)
+                if iid not in self._profiles:
+                    self._profiles[iid] = _IncidentProfile(iid, ev["tenant_id"], ev["environment"])
+                if not self._profiles[iid].trigger:
+                    self._profiles[iid].trigger = ev.get("attributes", {}).get("trigger", ev.get("trigger", ""))
+                if not self._profiles[iid].first_ts:
+                    self._profiles[iid].first_ts = ev["ts"]
             if ev["kind"] == "remediation":
                 self._feedback.append({
                     "incident_id": ev.get("incident_id", ""),
@@ -394,7 +403,9 @@ class Engine:
                 svc = raw["spans"][0].get("svc", "")
         elif kind == "topology":
             attrs.setdefault("change", raw.get("change", ""))
-            attrs.setdefault("from", raw.get("from", ""))
+            # harness generator emits 'from_' (Python keyword-safe); also accept 'from'
+            attrs.setdefault("from_", raw.get("from_", raw.get("from", "")))
+            attrs.setdefault("from", raw.get("from_", raw.get("from", "")))
             attrs.setdefault("to", raw.get("to", ""))
             svc = svc or attrs.get("to", "")
         elif kind == "remediation":
@@ -432,7 +443,9 @@ class Engine:
         kind = event["kind"]
         attrs = event["attributes"]
         if kind == "topology" and attrs.get("change") == "rename":
-            self._aliases.upsert(t, e, attrs.get("from", ""), attrs.get("to", ""))
+            # harness uses 'from_' key; also accept plain 'from' for our own events
+            frm = attrs.get("from_") or attrs.get("from") or event.get("from_", "")
+            self._aliases.upsert(t, e, frm, attrs.get("to", ""))
             event["canonical_service_id"] = self._aliases.resolve(t, e, attrs.get("to", ""))
         elif event["service_name"]:
             event["canonical_service_id"] = self._aliases.resolve(t, e, event["service_name"])
@@ -613,12 +626,13 @@ class Engine:
 
             if score >= 0.25:
                 matches.append({
-                    "past_incident_id": iid,
+                    "incident_id": iid,          # matches schema.py IncidentMatch
+                    "past_incident_id": iid,     # kept for backwards compat
                     "similarity": _confidence(score),
                     "rationale": self._rationale(canonical, profile, sig_sim),
                 })
 
-        return sorted(matches, key=lambda m: (-m["similarity"], m["past_incident_id"]))[:5]
+        return sorted(matches, key=lambda m: (-m["similarity"], m["incident_id"]))[:5]
 
     @staticmethod
     def _rationale(canonical: str, profile: "_IncidentProfile", sig_sim: float) -> str:

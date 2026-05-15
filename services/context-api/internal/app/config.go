@@ -23,11 +23,11 @@ type Config struct {
 	// is the correct setting when Nginx serves the UI and the API on the same
 	// origin. Set PCE_ALLOWED_ORIGINS when the frontend is hosted on a
 	// separate subdomain or CDN.
-	AllowedOrigins     []string
-	ReadTimeout        time.Duration
-	WriteTimeout       time.Duration
-	ShutdownTimeout    time.Duration
-	MaxRequestBytes    int64
+	AllowedOrigins  []string
+	ReadTimeout     time.Duration
+	WriteTimeout    time.Duration
+	ShutdownTimeout time.Duration
+	MaxRequestBytes int64
 }
 
 func LoadConfig() Config {
@@ -66,7 +66,6 @@ func parseOrigins(raw string) []string {
 	}
 	return out
 }
-
 
 func envOrDefault(key, fallback string) string {
 	value := os.Getenv(key)

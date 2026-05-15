@@ -11,15 +11,18 @@ import (
 	"github.com/memora/pce/services/context-api/internal/api"
 	"github.com/memora/pce/services/context-api/internal/app"
 	"github.com/memora/pce/services/context-api/internal/memory"
+	chstore "github.com/memora/pce/services/context-api/internal/persistence/clickhouse"
+	pgstore "github.com/memora/pce/services/context-api/internal/persistence/postgres"
 	"github.com/memora/pce/services/context-api/internal/service"
+	"github.com/memora/pce/services/context-api/internal/store"
 )
 
 func main() {
 	cfg := app.LoadConfig()
 
-	telemetryStore := memory.NewTelemetryStore()
-	graphStore := memory.NewGraphStore()
-	feedbackStore := memory.NewFeedbackStore()
+	telemetryStore, graphStore, feedbackStore, closers := buildStores(cfg)
+	defer closeAll(closers)
+
 	engine := service.NewEngine(telemetryStore, graphStore, feedbackStore, cfg)
 
 	handler := api.NewHandler(engine, cfg)
@@ -52,5 +55,40 @@ func main() {
 		if err := server.Shutdown(ctx); err != nil {
 			log.Fatal(err)
 		}
+	}
+}
+
+type closer interface {
+	Close()
+}
+
+func buildStores(cfg app.Config) (store.TelemetryStore, store.GraphStore, store.FeedbackStore, []closer) {
+	telemetryStore := store.TelemetryStore(memory.NewTelemetryStore())
+	graphStore := store.GraphStore(memory.NewGraphStore())
+	feedbackStore := store.FeedbackStore(memory.NewFeedbackStore())
+	var closers []closer
+
+	if cfg.ClickHouseURL != "" {
+		telemetryStore = chstore.NewTelemetryStore(cfg.ClickHouseURL)
+		log.Printf("using clickhouse telemetry store at %s", cfg.ClickHouseURL)
+	}
+
+	if cfg.PostgresDSN != "" {
+		pool, err := pgstore.NewPool(cfg.PostgresDSN)
+		if err != nil {
+			log.Fatalf("connect postgres: %v", err)
+		}
+		closers = append(closers, pool)
+		graphStore = pgstore.NewGraphStore(pool)
+		feedbackStore = pgstore.NewFeedbackStore(pool)
+		log.Printf("using postgres graph and feedback stores")
+	}
+
+	return telemetryStore, graphStore, feedbackStore, closers
+}
+
+func closeAll(closers []closer) {
+	for _, closer := range closers {
+		closer.Close()
 	}
 }

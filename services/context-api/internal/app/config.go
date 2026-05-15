@@ -11,6 +11,8 @@ type Config struct {
 	FastWindow         time.Duration
 	DeepWindow         time.Duration
 	SimilarityLookback time.Duration
+	ClickHouseURL      string
+	PostgresDSN        string
 	APIKey             string
 	ReadTimeout        time.Duration
 	WriteTimeout       time.Duration
@@ -24,6 +26,8 @@ func LoadConfig() Config {
 		FastWindow:         durationOrDefault("PCE_FAST_WINDOW", 30*time.Minute),
 		DeepWindow:         durationOrDefault("PCE_DEEP_WINDOW", 4*time.Hour),
 		SimilarityLookback: durationOrDefault("PCE_SIMILARITY_LOOKBACK", 30*24*time.Hour),
+		ClickHouseURL:      envOrDefault("CLICKHOUSE_DSN", ""),
+		PostgresDSN:        envOrDefault("POSTGRES_DSN", ""),
 		APIKey:             os.Getenv("PCE_API_KEY"),
 		ReadTimeout:        durationOrDefault("PCE_READ_TIMEOUT", 5*time.Second),
 		WriteTimeout:       durationOrDefault("PCE_WRITE_TIMEOUT", 10*time.Second),

@@ -21,7 +21,9 @@ This repo is a production-oriented foundation, not yet a fully wired production 
 Implemented:
 
 - Go Context API skeleton.
-- In-memory stores for local development.
+- ClickHouse telemetry adapter over HTTP.
+- Postgres-backed topology alias and remediation feedback adapters.
+- In-memory fallback stores for local development and tests.
 - Deterministic reconstruction logic.
 - API validation, optional API-key auth, request limits, logging, panic recovery, graceful shutdown, and basic metrics.
 - Docker Compose infrastructure scaffold.
@@ -34,9 +36,8 @@ Implemented:
 Not yet implemented:
 
 - Real Kafka ingestion adapter.
-- Real ClickHouse telemetry adapter.
 - Real Neo4j graph-memory adapter.
-- Real PostgreSQL control-plane adapter.
+- Full PostgreSQL control-plane adapter beyond aliases and remediation feedback.
 - Real Redis cache adapter.
 - Actual Flink streaming job code.
 - End-to-end runtime verification on this machine, because `go` and `docker` were not available on PATH.
@@ -51,6 +52,8 @@ Not yet implemented:
 - `services/context-api/internal/service/engine.go`: core reconstruction and memory logic.
 - `services/context-api/internal/domain/types.go`: public data contracts used by the API.
 - `services/context-api/internal/store/interfaces.go`: storage interfaces to replace in-memory stores.
+- `services/context-api/internal/persistence/clickhouse`: real telemetry persistence adapter.
+- `services/context-api/internal/persistence/postgres`: real Postgres alias and feedback adapters.
 - `services/context-api/internal/memory`: in-memory development store implementations.
 - `services/context-api/internal/service/engine_test.go`: current unit tests for rename-aware reconstruction.
 - `contracts/openapi.yaml`: public API contract.

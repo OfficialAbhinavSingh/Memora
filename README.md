@@ -4,7 +4,7 @@ Persistent Context Engine is a production-oriented scaffold for an autonomous SR
 
 - A Go context API aligned with the benchmark `Context` shape.
 - A canonical telemetry envelope and normalization path.
-- In-memory development implementations for telemetry, graph memory, and remediation feedback.
+- Real ClickHouse telemetry persistence and Postgres-backed alias/feedback persistence, with in-memory fallbacks for development and tests.
 - Production infrastructure scaffolding for Kafka, Flink, ClickHouse, Neo4j, PostgreSQL, Redis, OpenTelemetry Collector, Helm, and ArgoCD.
 
 ## Repository layout
@@ -69,5 +69,5 @@ Or run:
 ## Design notes
 
 - The current implementation is intentionally deterministic and explainable.
-- Storage adapters are interface-driven so ClickHouse, Neo4j, PostgreSQL, Redis, and Kafka-backed implementations can replace the in-memory defaults without changing handlers.
+- Storage adapters are interface-driven. ClickHouse and Postgres are now wired as first real backends, while Neo4j, Redis, and Kafka/Flink remain the next persistence milestones.
 - Reconstruction already supports topology rename continuity, incident recall heuristics, causal chain synthesis, and remediation ranking using historical outcomes.

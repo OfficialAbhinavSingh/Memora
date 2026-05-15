@@ -75,8 +75,8 @@ signals:            50
 recall@5:           1.000
 precision@5_mean:   0.200
 remediation_acc:    1.000
-latency_p95_ms:     47.00
-latency_mean_ms:    34.38
+latency_p95_ms:     32.00
+latency_mean_ms:    30.64
 weighted automated: 0.680 / 0.80
 ```
 

@@ -452,10 +452,10 @@ Quick self-check:
 seeds:              42 101
 signals:            20
 recall@5:           1.000
-precision@5_mean:   0.240
+precision@5_mean:   0.210
 remediation_acc:    1.000
-latency_p95_ms:     15.00
-weighted automated: 0.686 / 0.80
+latency_p95_ms:     16.00
+weighted automated: 0.681 / 0.80
 ```
 
 Full stress run written to `report.json`:
@@ -466,11 +466,11 @@ n-services:         20
 days:               14
 signals:            50
 recall@5:           1.000
-precision@5_mean:   0.216
+precision@5_mean:   0.200
 remediation_acc:    1.000
-latency_p95_ms:     47.00
-latency_mean_ms:    31.56
-weighted automated: 0.6824 / 0.80
+latency_p95_ms:     32.00
+latency_mean_ms:    30.64
+weighted automated: 0.680 / 0.80
 ```
 
 Important benchmark finding:
@@ -674,7 +674,7 @@ Latest generated public-harness fast-mode report:
 recall@5:            1.000
 precision@5_mean:   0.200
 remediation_acc:    1.000
-latency_p95_ms:     47 ms
+latency_p95_ms:     32 ms
 weighted automated: 0.680 / 0.80
 ```
 
@@ -711,7 +711,7 @@ Latest verified public report remains:
 recall@5:            1.000
 precision@5_mean:   0.200
 remediation_acc:    1.000
-latency_p95_ms:     47 ms
+latency_p95_ms:     32 ms
 weighted automated: 0.680 / 0.80
 ```
 

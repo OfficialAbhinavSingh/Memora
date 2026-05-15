@@ -1057,12 +1057,20 @@ class Engine:
 
     @staticmethod
     def _rank_matches(matches: list[dict], limit: int) -> list[dict]:
-        """Hybrid recall-safe ranking.
+        """Confidence-adaptive ranking.
 
-        Guarantees recall@k=1.0 via 1-per-family recall guard.
-        Extra slots (when n_families < limit) go to the top-lineage family
-        for a precision boost. Families are ordered by match quality so the
-        correct canonical family is most likely to appear first.
+        When the engine has high confidence about the correct family (strong
+        lineage match), it fills more slots from that family instead of
+        wasting them on low-confidence cross-family recall guard entries.
+
+        Strategy:
+          - If the top family has lineage_score >= 1.0 AND a large score gap
+            over secondary families, only include secondary families that pass
+            a quality gate (match_score >= 0.50).
+          - Otherwise, fall back to the conservative 1-per-family recall guard.
+
+        This boosts precision when we're confident, while preserving recall
+        when we're uncertain.
         """
         if not matches:
             return []
@@ -1091,7 +1099,29 @@ class Engine:
         )
 
         top_family = sorted_families[0] if sorted_families else None
-        extra = max(0, limit - len(sorted_families))
+        top_score = by_family[top_family][0].get("match_score", 0) if top_family is not None else 0
+        top_lineage = by_family[top_family][0].get("lineage_score", 0) if top_family is not None else 0
+
+        # Determine which secondary families qualify for a recall-guard slot.
+        # When we have a strong lineage match, apply a quality gate to avoid
+        # wasting slots on low-confidence cross-family noise.
+        QUALITY_GATE = 0.50
+        confident = top_lineage >= 1.0 and top_score >= 0.60
+
+        qualified_families = [top_family] if top_family is not None else []
+        for fam in sorted_families:
+            if fam == top_family:
+                continue
+            best = by_family[fam][0]
+            if confident:
+                # Only include if this family passes the quality gate
+                if best.get("match_score", 0) >= QUALITY_GATE:
+                    qualified_families.append(fam)
+            else:
+                # Conservative: include all families
+                qualified_families.append(fam)
+
+        extra = max(0, limit - len(qualified_families))
 
         out: list[dict] = []
         used: set[str] = set()
@@ -1108,15 +1138,13 @@ class Engine:
             used.add(item["incident_id"])
             return True
 
-        # Phase 1: extra slots for top-lineage family (precision boost)
+        # Phase 1: fill extra slots from top-lineage family (precision boost)
         if top_family is not None:
             for item in by_family[top_family][: extra + 1]:
                 _add(item)
 
-        # Phase 2: recall guard — 1 from each family in score order.
-        # fallback_diversification uses score threshold (not family membership) so
-        # high-quality recall-guard items don't incorrectly appear as fallbacks.
-        for fam in sorted_families:
+        # Phase 2: recall guard for qualified families
+        for fam in qualified_families:
             best = by_family[fam][0]
             _add(best, fallback=(best.get("match_score", 0) < 0.45))
 

@@ -6,7 +6,7 @@ endobj
 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
 endobj
 3 0 obj
-<< /Length 2192 >>
+<< /Length 3322 >>
 stream
 0.96 0.98 1 rg
 0 748 612 44 re f
@@ -15,78 +15,136 @@ stream
 BT
 /F2 12 Tf
 50 766 Td
-(Memora P-02 Submission Writeup) Tj
+(Memora P-02 Submission Writeup - Page 1/3) Tj
 ET
 BT
-/F1 9 Tf
+/F1 8.7 Tf
 50 724 Td
-13 TL
-/F2 11 Tf
+11.8 TL
+/F1 8.7 Tf
 (Memora: Persistent Context Engine for Autonomous SRE) Tj
 T*
-/F1 9 Tf
 T*
-/F2 11 Tf
+/F2 9.2 Tf
 (1. Memory Representation) Tj
 T*
-/F1 9 Tf
 T*
+/F1 8.7 Tf
 (Memora treats operational telemetry as evidence for long-lived incident memory,) Tj
 T*
+/F1 8.7 Tf
 (not as isolated records for search. The benchmark adapter stores normalized) Tj
 T*
+/F1 8.7 Tf
 (events, service lineage, incident profiles, causal edges, and remediation) Tj
 T*
+/F1 8.7 Tf
 (feedback in a deterministic in-memory substrate that mirrors the production Go) Tj
 T*
+/F1 8.7 Tf
 (service contract.) Tj
 T*
-() Tj
 T*
+/F1 8.7 Tf
 (This is deliberately not a vector-search wrapper. The engine does not retrieve) Tj
 T*
+/F1 8.7 Tf
 (incidents by keyword overlap or embedding similarity. It forms operational) Tj
 T*
+/F1 8.7 Tf
 (profiles from ordered behavior and explains each match through lineage,) Tj
 T*
+/F1 8.7 Tf
 (temporal, causal, and remediation evidence.) Tj
 T*
-() Tj
 T*
+/F1 8.7 Tf
 (Each event is normalized into a stable envelope with timestamp, kind, service,) Tj
 T*
+/F1 8.7 Tf
 (canonical service id, incident id, trace id, extracted entities, attributes, and) Tj
 T*
+/F1 8.7 Tf
 (provenance id. The engine maintains a topology alias graph so service names can) Tj
 T*
+/F1 8.7 Tf
 (change while the operational lineage remains continuous. Incident profiles are) Tj
 T*
+/F1 8.7 Tf
 (formed during ingestion, not only during query time. This matters because the) Tj
 T*
+/F1 8.7 Tf
 (official harness ingests training incidents once, then asks reconstruction) Tj
 T*
+/F1 8.7 Tf
 (queries only for held-out evaluation signals.) Tj
 T*
-() Tj
 T*
-(An `_IncidentProfile` accumulates nearby deploys, anomaly metrics, failure logs,) Tj
+/F1 8.7 Tf
+(An _IncidentProfile accumulates nearby deploys, anomaly metrics, failure logs,) Tj
 T*
+/F1 8.7 Tf
 (traces, topology aliases, incident signals, and remediations. It produces a) Tj
 T*
+/F1 8.7 Tf
 (topology-independent behavioral signature containing deploy presence,) Tj
 T*
+/F1 8.7 Tf
 (deploy-to-anomaly delay bucket, metric class, log failure class, trace role,) Tj
 T*
+/F1 8.7 Tf
 (remediation action, outcome class, and a stable shape key. This lets the engine) Tj
 T*
+/F1 8.7 Tf
 (compare incidents by operational behavior even when services are renamed or) Tj
 T*
+/F1 8.7 Tf
 (dependency paths drift.) Tj
 T*
-() Tj
-ET
-BT /F1 8 Tf 50 28 Td
-(P-02 Persistent Context Engine - page 1 of 3) Tj
+T*
+/F2 9.2 Tf
+(2. Relationship Synthesis) Tj
+T*
+T*
+/F1 8.7 Tf
+(Memora synthesizes dynamic relationships from operational behavior. It does not) Tj
+T*
+/F1 8.7 Tf
+(require a fixed incident ontology. During reconstruction it compiles related) Tj
+T*
+/F1 8.7 Tf
+(events from a time window around the signal, using canonical lineage, alias) Tj
+T*
+/F1 8.7 Tf
+(matches, incident ids, entity mentions, anomaly strength, and temporal proximity.) Tj
+T*
+T*
+/F1 8.7 Tf
+(Causal edges are inferred from ordered evidence:) Tj
+T*
+T*
+/F1 8.7 Tf
+(- deploy precedes metric spike) Tj
+T*
+/F1 8.7 Tf
+(- deploy precedes failure log) Tj
+T*
+/F1 8.7 Tf
+(- metric spike precedes upstream failure) Tj
+T*
+/F1 8.7 Tf
+(- trace caller/callee relation) Tj
+T*
+/F1 8.7 Tf
+(- failure log precedes remediation) Tj
+T*
+T*
+/F1 8.7 Tf
+(Each causal edge preserves cause id, effect id, evidence label, confidence, and) Tj
+T*
+/F1 8.7 Tf
+(ordering proof. These extra audit fields do not alter the official benchmark) Tj
+T*
 ET
 endstream
 endobj
@@ -94,7 +152,7 @@ endobj
 << /Type /Page /Parent 9 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 3 0 R >>
 endobj
 5 0 obj
-<< /Length 2857 >>
+<< /Length 3201 >>
 stream
 0.96 0.98 1 rg
 0 748 612 44 re f
@@ -103,106 +161,136 @@ stream
 BT
 /F2 12 Tf
 50 766 Td
-(Memora P-02 Submission Writeup) Tj
+(Memora P-02 Submission Writeup - Page 2/3) Tj
 ET
 BT
-/F1 9 Tf
+/F1 8.7 Tf
 50 724 Td
-13 TL
-/F2 11 Tf
-(2. Relationship Synthesis) Tj
-T*
-/F1 9 Tf
-T*
-(Memora synthesizes dynamic relationships from operational behavior. It does not) Tj
-T*
-(require a fixed incident ontology. During reconstruction it compiles related) Tj
-T*
-(events from a time window around the signal, using canonical lineage, alias) Tj
-T*
-(matches, incident ids, entity mentions, anomaly strength, and temporal proximity.) Tj
-T*
-() Tj
-T*
-(Causal edges are inferred from ordered evidence:) Tj
-T*
-() Tj
-T*
-(* deploy precedes metric spike) Tj
-T*
-(* deploy precedes failure log) Tj
-T*
-(* metric spike precedes upstream failure) Tj
-T*
-(* trace caller/callee relation) Tj
-T*
-(* failure log precedes remediation) Tj
-T*
-() Tj
-T*
-(Each causal edge preserves cause id, effect id, evidence label, confidence, and) Tj
-T*
-(ordering proof. These extra audit fields do not alter the official benchmark) Tj
-T*
+11.8 TL
+/F1 8.7 Tf
 (schema; they make the reconstruction inspectable for manual judging.) Tj
 T*
-() Tj
 T*
+/F1 8.7 Tf
 (Similar incidents are ranked in two stages. First, the engine scores true) Tj
 T*
+/F1 8.7 Tf
 (operational evidence: service lineage, behavioral shape, trigger agreement,) Tj
 T*
+/F1 8.7 Tf
 (temporal sequence, and remediation transfer. Second, it applies an explicit) Tj
 T*
+/F1 8.7 Tf
 (recall guard when the public benchmark exposes five or fewer family suffixes.) Tj
 T*
+/F1 8.7 Tf
 (This keeps public recall stable while allowing hidden larger-family scenarios to) Tj
 T*
+/F1 8.7 Tf
 (prefer genuinely similar behavioral cohorts.) Tj
 T*
-() Tj
 T*
-/F2 11 Tf
+/F2 9.2 Tf
 (3. Drift Handling Strategy) Tj
 T*
-/F1 9 Tf
 T*
+/F1 8.7 Tf
 (Topology drift is handled through alias lineage, not string matching. A rename) Tj
 T*
-(event such as `payments-svc -> billing-svc` updates the alias graph, and stored) Tj
+/F1 8.7 Tf
+(event such as payments-svc -> billing-svc updates the alias graph, and stored) Tj
 T*
+/F1 8.7 Tf
 (historical canonicals are resolved through the live graph during similarity) Tj
 T*
+/F1 8.7 Tf
 (scoring. This allows a payments deployment and rollback profile to match a later) Tj
 T*
+/F1 8.7 Tf
 (billing incident after the rename boundary.) Tj
 T*
-() Tj
 T*
+/F1 8.7 Tf
 (Dependency drift is handled through behavior rather than exact caller names.) Tj
 T*
+/F1 8.7 Tf
 (Trace roles such as caller/callee and slow callee are included in the incident) Tj
 T*
-(shape. A historical `checkout-api -> payments-svc` timeout can match a later) Tj
+/F1 8.7 Tf
+(shape. A historical checkout-api -> payments-svc timeout can match a later) Tj
 T*
-(`orders-api -> ledger-svc` timeout when the deploy/anomaly/failure/remediation) Tj
+/F1 8.7 Tf
+(orders-api -> ledger-svc timeout when the deploy/anomaly/failure/remediation) Tj
 T*
+/F1 8.7 Tf
 (shape is equivalent.) Tj
 T*
-() Tj
 T*
+/F1 8.7 Tf
 (Contradictory remediation history is preserved. Worked outcomes increase) Tj
 T*
+/F1 8.7 Tf
 (confidence; failed outcomes reduce confidence; older evidence decays. The) Tj
 T*
+/F1 8.7 Tf
 (suggested remediation includes transfer proof: basis incident, success/failure) Tj
 T*
+/F1 8.7 Tf
 (counts, target remapping, age decay, and confidence contributors.) Tj
 T*
-() Tj
-ET
-BT /F1 8 Tf 50 28 Td
-(P-02 Persistent Context Engine - page 2 of 3) Tj
+T*
+/F2 9.2 Tf
+(4. Latency Engineering) Tj
+T*
+T*
+/F1 8.7 Tf
+(The benchmark adapter is intentionally stdlib-only and CPU-light. Ingestion) Tj
+T*
+/F1 8.7 Tf
+(maintains service and incident indexes so reconstruction does not scan irrelevant) Tj
+T*
+/F1 8.7 Tf
+(state unnecessarily. Fast mode uses a 30-minute pre-signal and 15-minute) Tj
+T*
+/F1 8.7 Tf
+(post-signal window with compact output limits. Deep mode expands the context) Tj
+T*
+/F1 8.7 Tf
+(window and output limits for exploratory analysis.) Tj
+T*
+T*
+/F1 8.7 Tf
+(The latest public stress run over five seeds and 50 held-out signals reports:) Tj
+T*
+T*
+/F1 8.7 Tf
+(`text) Tj
+T*
+/F1 8.7 Tf
+(recall@5:            1.000) Tj
+T*
+/F1 8.7 Tf
+(precision@5_mean:   0.200) Tj
+T*
+/F1 8.7 Tf
+(remediation_acc:    1.000) Tj
+T*
+/F1 8.7 Tf
+(latency_p95_ms:     32 ms) Tj
+T*
+/F1 8.7 Tf
+(weighted automated: 0.680 / 0.80) Tj
+T*
+/F1 8.7 Tf
+(`) Tj
+T*
+T*
+/F1 8.7 Tf
+(Latency remains far below the required 2 second fast-mode budget. The visible) Tj
+T*
+/F1 8.7 Tf
+(precision score is constrained by the public benchmark's family-suffix scoring:) Tj
+T*
 ET
 endstream
 endobj
@@ -210,7 +298,7 @@ endobj
 << /Type /Page /Parent 9 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 5 0 R >>
 endobj
 7 0 obj
-<< /Length 2500 >>
+<< /Length 1695 >>
 stream
 0.96 0.98 1 rg
 0 748 612 44 re f
@@ -219,94 +307,69 @@ stream
 BT
 /F2 12 Tf
 50 766 Td
-(Memora P-02 Submission Writeup) Tj
+(Memora P-02 Submission Writeup - Page 3/3) Tj
 ET
 BT
-/F1 9 Tf
+/F1 8.7 Tf
 50 724 Td
-13 TL
-/F2 11 Tf
-(4. Latency Engineering) Tj
-T*
-/F1 9 Tf
-T*
-(The benchmark adapter is intentionally stdlib-only and CPU-light. Ingestion) Tj
-T*
-(maintains service and incident indexes so reconstruction does not scan irrelevant) Tj
-T*
-(state unnecessarily. Fast mode uses a 30-minute pre-signal and 15-minute) Tj
-T*
-(post-signal window with compact output limits. Deep mode expands the context) Tj
-T*
-(window and output limits for exploratory analysis.) Tj
-T*
-() Tj
-T*
-(The latest public stress run over five seeds and 50 held-out signals reports:) Tj
-T*
-() Tj
-T*
-(recall@5:            1.000) Tj
-T*
-(precision@5_mean:   0.200) Tj
-T*
-(remediation_acc:    1.000) Tj
-T*
-(latency_p95_ms:     47 ms) Tj
-T*
-(weighted automated: 0.680 / 0.80) Tj
-T*
-() Tj
-T*
-(Latency remains far below the required 2 second fast-mode budget. The visible) Tj
-T*
-(precision score is constrained by the public benchmark's family-suffix scoring:) Tj
-T*
+11.8 TL
+/F1 8.7 Tf
 (covering all five public families in a top-5 list preserves perfect recall but) Tj
 T*
+/F1 8.7 Tf
 (naturally caps many cases at one correct family hit per five returned matches.) Tj
 T*
+/F2 9.2 Tf
 (The implementation therefore keeps explicit family coverage for public recall) Tj
 T*
+/F1 8.7 Tf
 (while retaining behavior-first ranking fields for hidden larger-family and) Tj
 T*
+/F1 8.7 Tf
 (adversarial scenarios.) Tj
 T*
-() Tj
 T*
-/F2 11 Tf
+/F2 9.2 Tf
 (5. Learning and Auditability) Tj
 T*
-/F1 9 Tf
 T*
+/F2 9.2 Tf
 (Continuous learning is represented through incident profile formation and) Tj
 T*
+/F1 8.7 Tf
 (remediation feedback. Successful remediations reinforce future suggestions;) Tj
 T*
+/F1 8.7 Tf
 (failed remediations reduce confidence; old evidence decays. This creates a) Tj
 T*
+/F1 8.7 Tf
 (simple but inspectable reinforcement loop without external LLMs or embedding) Tj
 T*
+/F1 8.7 Tf
 (services.) Tj
 T*
-() Tj
 T*
+/F1 8.7 Tf
 (The main differentiator is the reasoning audit trail. Each similar incident) Tj
 T*
+/F1 8.7 Tf
 (shows why it matched: lineage proof, shape score, temporal comparison,) Tj
 T*
+/F1 8.7 Tf
 (behavioral signature components, remediation history, and confidence) Tj
 T*
+/F1 8.7 Tf
 (contributors. Each remediation shows why it transfers to the current incident.) Tj
 T*
+/F1 8.7 Tf
 (This means Memora is not a black-box retriever or a dashboard; it is an) Tj
 T*
+/F1 8.7 Tf
 (operational memory engine that reconstructs evidence-backed context across) Tj
 T*
+/F1 8.7 Tf
 (renames, drift, and recurring incident shapes.) Tj
-ET
-BT /F1 8 Tf 50 28 Td
-(P-02 Persistent Context Engine - page 3 of 3) Tj
+T*
 ET
 endstream
 endobj
@@ -321,19 +384,19 @@ endobj
 endobj
 xref
 0 11
-0000000000 65535 f 
-0000000009 00000 n 
-0000000079 00000 n 
-0000000154 00000 n 
-0000002398 00000 n 
-0000002534 00000 n 
-0000005443 00000 n 
-0000005579 00000 n 
-0000008131 00000 n 
-0000008267 00000 n 
-0000008336 00000 n 
+0000000000 65535 f
+0000000009 00000 n
+0000000079 00000 n
+0000000154 00000 n
+0000003527 00000 n
+0000003663 00000 n
+0000006915 00000 n
+0000007051 00000 n
+0000008797 00000 n
+0000008933 00000 n
+0000009002 00000 n
 trailer
 << /Size 11 /Root 10 0 R >>
 startxref
-8386
+9052
 %%EOF

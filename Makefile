@@ -22,10 +22,11 @@ web-docker:
 	docker build web -t pce/web-ui:local
 
 bench:
-	python bench/worked_example_check.py
+	sh bench/run.sh
 
 smoke:
-	python bench/worked_example_check.py > bench-report.json && python bench/summarize_report.py bench-report.json
+	python bench/worked_example_check.py
+	python bench/regression_check.py
 
 docker-up:
 	docker compose up --build

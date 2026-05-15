@@ -54,7 +54,7 @@ If the official harness is absent, the runner still emits a local fallback
 recall@5:            1.000
 precision@5_mean:   0.200
 remediation_acc:    1.000
-latency_p95_ms:     47 ms
+latency_p95_ms:     32 ms
 weighted automated: 0.680 / 0.80
 ```
 

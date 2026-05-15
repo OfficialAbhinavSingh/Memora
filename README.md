@@ -52,7 +52,7 @@ Useful `make` targets (require Go and Docker on PATH):
 | `make web-lint` | Lint the React frontend |
 | `make web-build` | Production build of the frontend |
 | `make web-docker` | Build the Nginx+React production Docker image |
-| `make bench` | Run the Python worked-example smoke check |
+| `make bench` | Run the judge-style benchmark runner |
 | `make docker-up` | Start the full local stack |
 | `make docker-down` | Stop the local stack |
 
@@ -104,7 +104,7 @@ harness as `adapters/memora.py`, runs
 the Python standard library and performs no external network egress.
 
 Latest local public-harness fast-mode result on the stress command: `recall@5`
-1.000, `precision@5_mean` 0.200, `remediation_acc` 1.000, p95 latency 47 ms,
+1.000, `precision@5_mean` 0.200, `remediation_acc` 1.000, p95 latency 32 ms,
 weighted automated score 0.680 / 0.80.
 
 Submission artifacts:

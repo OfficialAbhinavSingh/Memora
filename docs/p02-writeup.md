@@ -88,7 +88,7 @@ The latest public stress run over five seeds and 50 held-out signals reports:
 recall@5:            1.000
 precision@5_mean:   0.200
 remediation_acc:    1.000
-latency_p95_ms:     47 ms
+latency_p95_ms:     32 ms
 weighted automated: 0.680 / 0.80
 ```
 

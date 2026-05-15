@@ -103,6 +103,7 @@ export default function BenchmarkResults() {
     if (!report) return 0;
     return scorePct(report.score.weighted_score, report.score.max_automated);
   }, [report]);
+  const seedList = report?.seeds?.length ? report.seeds.join(', ') : 'fallback/local checks only';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -131,7 +132,7 @@ export default function BenchmarkResults() {
                     {report.score.weighted_score.toFixed(4)} / {report.score.max_automated.toFixed(2)}
                   </div>
                   <div className="text-xs text-muted">
-                    {summary.n_signals_total} eval signals · {summary.n_seeds} seeds · {report.seeds.join(', ')}
+                    {summary.n_signals_total} eval signals · {summary.n_seeds} seeds · {seedList}
                   </div>
                 </div>
                 <div style={{ width: 320 }}>
@@ -167,6 +168,13 @@ export default function BenchmarkResults() {
                   </tr>
                 </thead>
                 <tbody>
+                  {report.per_seed.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="text-muted">
+                        No per-seed rows in fallback report. Run with the official harness for scored metrics.
+                      </td>
+                    </tr>
+                  )}
                   {report.per_seed.map(seed => (
                     <tr key={seed.seed}>
                       <td><span className="mono text-xs" style={{ color: 'var(--text-heading)' }}>{seed.seed}</span></td>

@@ -17,6 +17,54 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: services/context-api/go.mod
-      - run: go test ./...
+      - name: gofmt check
+        run: |
+          bad=$(gofmt -l .)
+          if [ -n "$bad" ]; then
+            echo "gofmt issues in: $bad"
+            exit 1
+          fi
       - run: go vet ./...
+      - run: go test ./...
       - run: go build ./cmd/context-api
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Syntax check adapter
+        run: python -m py_compile bench/adapters/memora.py bench/worked_example_check.py bench/summarize_report.py
+      - name: Worked-example smoke check
+        run: python bench/worked_example_check.py > bench-report.json
+      - name: Summarize report
+        run: python bench/summarize_report.py bench-report.json || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-smoke-report
+          path: bench-report.json
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build context-api image
+        run: docker build services/context-api -t pce/context-api:ci

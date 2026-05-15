@@ -11,7 +11,11 @@ export default function InvestigationTimeline() {
 
   const toggle = (k: string) => setActiveKinds(s => {
     const n = new Set(s);
-    n.has(k) ? n.delete(k) : n.add(k);
+    if (n.has(k)) {
+      n.delete(k);
+    } else {
+      n.add(k);
+    }
     return n;
   });
 

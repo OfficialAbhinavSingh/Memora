@@ -16,9 +16,16 @@ The engine turns operational telemetry into persistent memory. It should reconst
 8. The Go API reconstructs structured context for responders.
 9. S3-compatible storage archives raw events, replay bundles, snapshots, and offline evaluation data.
 
+## Execution paths
+
+- Benchmark path: `bench.adapters.memora:Engine` runs as a pure-Python, stdlib-only adapter for the public harness. It normalizes JSONL benchmark events, preserves provenance, and reconstructs the required structured `Context` without requiring Docker or network access.
+- Production API path: `services/context-api` exposes HTTP ingestion, context reconstruction, feedback, topology aliases, health, readiness, and metrics for operators and the web UI.
+- Durable store path: ClickHouse stores normalized telemetry, PostgreSQL stores aliases, remediation feedback, and incident memories, and Neo4j receives mirrored relationship projections for aliases, incident similarity, causal edges, and remediation links.
+- Streaming path: Kafka and Flink remain the intended online synthesis layer for higher-throughput relationship formation; the deterministic API engine remains available as the explainable reconstruction core.
+
 ## First production milestone
 
-The current codebase implements the Go API, deterministic reconstruction logic, development stores, deployment manifests, and infrastructure contracts. The next implementation milestone is replacing the development stores with real ClickHouse, Neo4j, PostgreSQL, Redis, and Kafka adapters behind the existing interfaces.
+The current codebase implements the Go API, deterministic reconstruction logic, development stores, ClickHouse telemetry persistence, PostgreSQL durable control-plane and incident memory persistence, Neo4j relationship projection, deployment manifests, and infrastructure contracts. The next implementation milestone is Kafka/Flink stream-time synthesis and Redis hot-path caching.
 
 ## Operational guarantees
 
@@ -27,3 +34,4 @@ The current codebase implements the Go API, deterministic reconstruction logic, 
 - Every related event and causal edge should preserve evidence pointers.
 - Service aliases are first-class memory, not a string replacement trick.
 - Feedback reinforces remediation confidence without deleting contradictory history.
+- Readiness checks configured stores; health remains process-level.

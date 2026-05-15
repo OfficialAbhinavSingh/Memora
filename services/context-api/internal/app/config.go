@@ -13,6 +13,9 @@ type Config struct {
 	SimilarityLookback time.Duration
 	ClickHouseURL      string
 	PostgresDSN        string
+	Neo4jURI           string
+	Neo4jUser          string
+	Neo4jPassword      string
 	APIKey             string
 	ReadTimeout        time.Duration
 	WriteTimeout       time.Duration
@@ -28,6 +31,9 @@ func LoadConfig() Config {
 		SimilarityLookback: durationOrDefault("PCE_SIMILARITY_LOOKBACK", 30*24*time.Hour),
 		ClickHouseURL:      envOrDefault("CLICKHOUSE_DSN", ""),
 		PostgresDSN:        envOrDefault("POSTGRES_DSN", ""),
+		Neo4jURI:           envOrDefault("NEO4J_URI", ""),
+		Neo4jUser:          envOrDefault("NEO4J_USER", ""),
+		Neo4jPassword:      envOrDefault("NEO4J_PASSWORD", ""),
 		APIKey:             os.Getenv("PCE_API_KEY"),
 		ReadTimeout:        durationOrDefault("PCE_READ_TIMEOUT", 5*time.Second),
 		WriteTimeout:       durationOrDefault("PCE_WRITE_TIMEOUT", 10*time.Second),

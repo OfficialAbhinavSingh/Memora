@@ -18,6 +18,10 @@ func NewTelemetryStore() *TelemetryStore {
 	return &TelemetryStore{}
 }
 
+func (s *TelemetryStore) Ping() error {
+	return nil
+}
+
 func (s *TelemetryStore) Append(events []domain.Event) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -155,6 +155,23 @@ func (e *Engine) GetIncidentMemory(incidentID string) (domain.IncidentMemory, bo
 	return e.graph.GetIncidentMemory(incidentID)
 }
 
+func (e *Engine) Ready() error {
+	for name, dependency := range map[string]any{
+		"telemetry": e.telemetry,
+		"graph":     e.graph,
+		"feedback":  e.feedback,
+	} {
+		checker, ok := dependency.(interface{ Ping() error })
+		if !ok {
+			continue
+		}
+		if err := checker.Ping(); err != nil {
+			return fmt.Errorf("%s store unavailable: %w", name, err)
+		}
+	}
+	return nil
+}
+
 func (e *Engine) RecordFeedback(req domain.FeedbackRequest) error {
 	if strings.TrimSpace(req.IncidentID) == "" {
 		return invalidInput("incident_id is required")
@@ -461,30 +478,46 @@ func (e *Engine) rankRemediations(signal domain.IncidentSignal, similar []domain
 	for _, match := range similar {
 		similarSet[match.PastIncidentID] = struct{}{}
 	}
+	aliasSet := map[string]struct{}{}
+	for _, alias := range e.graph.AliasesFor(signal.TenantID, signal.Environment, signal.ServiceName) {
+		aliasSet[strings.ToLower(alias)] = struct{}{}
+	}
 
 	grouped := map[string]candidate{}
 	for _, record := range history {
 		score := 0.2
 		if record.CanonicalServiceID != "" && record.CanonicalServiceID == signal.CanonicalServiceID {
 			score += 0.35
+		} else if _, ok := aliasSet[strings.ToLower(record.Target)]; ok && record.Target != "" {
+			score += 0.35
+		} else if _, ok := aliasSet[strings.ToLower(record.ServiceName)]; ok && record.ServiceName != "" {
+			score += 0.25
 		}
 		if _, ok := similarSet[record.IncidentID]; ok {
 			score += 0.30
 		}
-		if strings.EqualFold(record.Outcome, "resolved") || strings.EqualFold(record.Outcome, "success") {
+		switch strings.ToLower(record.Outcome) {
+		case "resolved", "success", "worked":
 			score += 0.15
+		case "failed":
+			score -= 0.15
 		}
 		if record.Target == signal.ServiceName {
 			score += 0.10
 		}
+		if !record.ObservedAt.IsZero() && !signal.TS.IsZero() && signal.TS.After(record.ObservedAt) {
+			ageDays := signal.TS.Sub(record.ObservedAt).Hours() / 24
+			score *= math.Max(0.55, 1-(ageDays/365.0)*0.25)
+		}
 
-		key := record.Action + "|" + record.Target
+		target := chooseTarget(record, signal, aliasSet)
+		key := record.Action + "|" + target
 		existing, ok := grouped[key]
 		if !ok || score > existing.score {
 			grouped[key] = candidate{
 				Remediation: domain.Remediation{
 					Action:            record.Action,
-					Target:            chooseTarget(record.Target, signal.ServiceName),
+					Target:            target,
 					HistoricalOutcome: record.Outcome,
 					Confidence:        clampConfidence(score),
 				},
@@ -575,11 +608,13 @@ func traceImpliesLatency(event domain.Event) bool {
 
 func incidentSignature(signal domain.IncidentSignal, related []domain.Event) string {
 	kinds := make([]string, 0, len(related))
+	tokens := shapeTokens(related)
 	for _, event := range related {
 		kinds = append(kinds, event.Kind)
 	}
 	slices.Sort(kinds)
-	return strings.Join(append([]string{signal.Trigger, signal.CanonicalServiceID}, kinds...), "|")
+	slices.Sort(tokens)
+	return strings.Join(append([]string{signal.Trigger, signal.CanonicalServiceID}, append(kinds, tokens...)...), "|")
 }
 
 func similarityScore(signal domain.IncidentSignal, currentSig string, historical domain.IncidentSignal, related []domain.Event) float64 {
@@ -604,7 +639,61 @@ func similarityScore(signal domain.IncidentSignal, currentSig string, historical
 	if signal.ServiceName != "" && strings.EqualFold(signal.ServiceName, historical.ServiceName) {
 		score += 0.15
 	}
+	sharedShape := 0
+	for _, token := range shapeTokens(related) {
+		if strings.Contains(currentSig, token) {
+			sharedShape++
+		}
+	}
+	score += math.Min(0.25, float64(sharedShape)*0.06)
 	return clampConfidence(score)
+}
+
+func shapeTokens(events []domain.Event) []string {
+	tokens := map[string]struct{}{}
+	var deployTS time.Time
+	for _, event := range events {
+		switch event.Kind {
+		case "deploy":
+			tokens["deploy"] = struct{}{}
+			if deployTS.IsZero() || event.TS.Before(deployTS) {
+				deployTS = event.TS
+			}
+		case "metric":
+			name := strings.ToLower(stringify(event.Attributes["name"]))
+			if strings.Contains(name, "latency") || metricSpike(event) {
+				tokens["latency-spike"] = struct{}{}
+			}
+			if strings.Contains(name, "error") {
+				tokens["error-rate"] = struct{}{}
+			}
+		case "log":
+			if logImpliesFailure(event) {
+				tokens["upstream-failure"] = struct{}{}
+			}
+		case "trace":
+			if traceImpliesLatency(event) {
+				tokens["trace-latency"] = struct{}{}
+			}
+		case "remediation":
+			action := strings.ToLower(stringify(event.Attributes["action"]))
+			outcome := strings.ToLower(stringify(event.Attributes["outcome"]))
+			if action != "" {
+				tokens["remediation:"+action] = struct{}{}
+			}
+			if outcome != "" {
+				tokens["outcome:"+outcome] = struct{}{}
+			}
+		}
+		if !deployTS.IsZero() && event.TS.After(deployTS) && event.TS.Sub(deployTS) <= 10*time.Minute {
+			tokens["post-deploy-window"] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(tokens))
+	for token := range tokens {
+		out = append(out, token)
+	}
+	return out
 }
 
 func compactNonEmpty(items []string) []string {
@@ -617,11 +706,17 @@ func compactNonEmpty(items []string) []string {
 	return out
 }
 
-func chooseTarget(recordTarget, fallback string) string {
-	if recordTarget != "" {
-		return recordTarget
+func chooseTarget(record domain.RemediationRecord, signal domain.IncidentSignal, aliases map[string]struct{}) string {
+	if record.CanonicalServiceID != "" && record.CanonicalServiceID == signal.CanonicalServiceID && signal.ServiceName != "" {
+		return signal.ServiceName
 	}
-	return fallback
+	if _, ok := aliases[strings.ToLower(record.Target)]; ok && signal.ServiceName != "" {
+		return signal.ServiceName
+	}
+	if record.Target != "" {
+		return record.Target
+	}
+	return signal.ServiceName
 }
 
 func stringify(value any) string {

@@ -12,6 +12,7 @@ import (
 	"github.com/memora/pce/services/context-api/internal/app"
 	"github.com/memora/pce/services/context-api/internal/memory"
 	chstore "github.com/memora/pce/services/context-api/internal/persistence/clickhouse"
+	neo4jstore "github.com/memora/pce/services/context-api/internal/persistence/neo4j"
 	pgstore "github.com/memora/pce/services/context-api/internal/persistence/postgres"
 	"github.com/memora/pce/services/context-api/internal/service"
 	"github.com/memora/pce/services/context-api/internal/store"
@@ -82,6 +83,12 @@ func buildStores(cfg app.Config) (store.TelemetryStore, store.GraphStore, store.
 		graphStore = pgstore.NewGraphStore(pool)
 		feedbackStore = pgstore.NewFeedbackStore(pool)
 		log.Printf("using postgres graph and feedback stores")
+	}
+
+	if cfg.Neo4jURI != "" {
+		neo4jGraph := neo4jstore.NewGraphStore(cfg.Neo4jURI, cfg.Neo4jUser, cfg.Neo4jPassword)
+		graphStore = store.NewMirroredGraphStore(graphStore, neo4jGraph)
+		log.Printf("mirroring graph relationships to neo4j at %s", cfg.Neo4jURI)
 	}
 
 	return telemetryStore, graphStore, feedbackStore, closers

@@ -15,6 +15,10 @@ func NewFeedbackStore() *FeedbackStore {
 	return &FeedbackStore{}
 }
 
+func (s *FeedbackStore) Ping() error {
+	return nil
+}
+
 func (s *FeedbackStore) Record(remediation domain.RemediationRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -157,6 +157,10 @@ components:
           type: string
         trigger:
           type: string
+        attributes:
+          type: object
+          additionalProperties:
+            type: string
     ReconstructRequest:
       type: object
       required: [signal]
@@ -177,21 +181,63 @@ components:
         causal_chain:
           type: array
           items:
-            type: object
+            $ref: "#/components/schemas/CausalEdge"
         similar_past_incidents:
           type: array
           items:
-            type: object
+            $ref: "#/components/schemas/IncidentMatch"
         suggested_remediations:
           type: array
           items:
-            type: object
+            $ref: "#/components/schemas/Remediation"
         confidence:
           type: number
           minimum: 0
           maximum: 1
         explain:
           type: string
+    CausalEdge:
+      type: object
+      required: [cause_id, effect_id, evidence, confidence]
+      properties:
+        cause_id:
+          type: string
+        effect_id:
+          type: string
+        evidence:
+          type: array
+          items:
+            type: string
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+    IncidentMatch:
+      type: object
+      required: [past_incident_id, similarity, rationale]
+      properties:
+        past_incident_id:
+          type: string
+        similarity:
+          type: number
+          minimum: 0
+          maximum: 1
+        rationale:
+          type: string
+    Remediation:
+      type: object
+      required: [action, target, historical_outcome, confidence]
+      properties:
+        action:
+          type: string
+        target:
+          type: string
+        historical_outcome:
+          type: string
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
     FeedbackRequest:
       type: object
       required: [incident_id, tenant_id, environment, action, target, outcome, observed_at]
@@ -208,9 +254,15 @@ components:
           type: string
         outcome:
           type: string
+        version:
+          type: string
         observed_at:
           type: string
           format: date-time
+        service_name:
+          type: string
+        canonical_service_id:
+          type: string
     AliasRequest:
       type: object
       required: [tenant_id, environment, from, to]

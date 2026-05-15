@@ -23,6 +23,10 @@ func NewGraphStore() *GraphStore {
 	}
 }
 
+func (s *GraphStore) Ping() error {
+	return nil
+}
+
 func (s *GraphStore) UpsertAlias(alias domain.AliasRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -42,6 +46,9 @@ func (s *GraphStore) UpsertAlias(alias domain.AliasRecord) error {
 	s.canonical[keyTo] = canonical
 	link(s.adjacency, keyFrom, keyTo)
 	link(s.adjacency, keyTo, keyFrom)
+	for _, key := range connectedKeys(s.adjacency, keyFrom) {
+		s.canonical[key] = canonical
+	}
 
 	return nil
 }
@@ -152,4 +159,25 @@ func link(adjacency map[string]map[string]struct{}, from, to string) {
 		adjacency[from] = map[string]struct{}{}
 	}
 	adjacency[from][to] = struct{}{}
+}
+
+func connectedKeys(adjacency map[string]map[string]struct{}, start string) []string {
+	seen := map[string]struct{}{start: {}}
+	queue := []string{start}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		for next := range adjacency[current] {
+			if _, ok := seen[next]; ok {
+				continue
+			}
+			seen[next] = struct{}{}
+			queue = append(queue, next)
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for key := range seen {
+		out = append(out, key)
+	}
+	return out
 }

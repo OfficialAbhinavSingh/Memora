@@ -45,6 +45,14 @@ func NewTelemetryStore(baseURL string) *TelemetryStore {
 	}
 }
 
+func (s *TelemetryStore) Ping() error {
+	respBody, err := s.query(context.Background(), "SELECT 1 FORMAT JSONEachRow")
+	if err != nil {
+		return err
+	}
+	return respBody.Close()
+}
+
 func (s *TelemetryStore) Append(events []domain.Event) error {
 	var body bytes.Buffer
 	encoder := json.NewEncoder(&body)

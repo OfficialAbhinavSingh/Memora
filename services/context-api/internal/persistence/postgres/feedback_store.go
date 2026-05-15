@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -14,6 +15,12 @@ type FeedbackStore struct {
 
 func NewFeedbackStore(pool *pgxpool.Pool) *FeedbackStore {
 	return &FeedbackStore{pool: pool}
+}
+
+func (s *FeedbackStore) Ping() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return s.pool.Ping(ctx)
 }
 
 func (s *FeedbackStore) Record(remediation domain.RemediationRecord) error {

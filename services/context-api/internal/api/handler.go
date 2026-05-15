@@ -42,6 +42,10 @@ func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (h *Handler) readiness(w http.ResponseWriter, _ *http.Request) {
+	if err := h.engine.Ready(); err != nil {
+		writeError(w, http.StatusServiceUnavailable, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 

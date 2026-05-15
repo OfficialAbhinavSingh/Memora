@@ -28,3 +28,16 @@ CREATE TABLE IF NOT EXISTS remediation_feedback (
     canonical_service_id TEXT NOT NULL DEFAULT '',
     observed_at TIMESTAMPTZ NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS incident_memories (
+    tenant_id TEXT NOT NULL,
+    environment TEXT NOT NULL,
+    incident_id TEXT PRIMARY KEY,
+    signal JSONB NOT NULL,
+    context JSONB NOT NULL,
+    observed_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS incident_memories_tenant_env_observed_idx
+    ON incident_memories (tenant_id, environment, observed_at DESC);

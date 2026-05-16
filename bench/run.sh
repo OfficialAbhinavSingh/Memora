@@ -36,13 +36,20 @@ mkdir -p "$OFFICIAL/adapters"
 cp "$BENCH_DIR/adapters/memora.py" "$OFFICIAL/adapters/memora.py"
 
 cd "$OFFICIAL"
+
+# Quick L2 self-check, for local iteration only (not scored).
 python self_check.py --adapter adapters.memora:Engine --quick
-python run.py --adapter adapters.memora:Engine --mode fast \
-  --seeds 9999 31415 27182 16180 11235 \
-  --n-services 20 --days 14 \
-  --out "$REPO_ROOT/report.json"
+
+# L3 final bench — the official submission run. Stretch config and the
+# council seeds are locked inside run.py; do NOT pass --seeds /
+# --n-services / --days, the harness will reject them.
+REPORT_PATH="$OFFICIAL/l3_report.json"
+python run.py --adapter adapters.memora:Engine --out "$REPORT_PATH"
+
+# Mirror to repo root for convenience.
+cp "$REPORT_PATH" "$REPO_ROOT/report.json"
 
 if [ -d "$REPO_ROOT/web/public" ]; then
-  cp "$REPO_ROOT/report.json" "$REPO_ROOT/web/public/benchmark-report.json"
-  echo "Copied benchmark report to web/public/benchmark-report.json"
+  cp "$REPORT_PATH" "$REPO_ROOT/web/public/benchmark-report.json"
+  echo "Copied L3 report to web/public/benchmark-report.json"
 fi

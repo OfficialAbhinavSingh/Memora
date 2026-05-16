@@ -20,7 +20,9 @@ foreach ($candidate in $officialCandidates) {
 Push-Location $BenchDir
 try {
     python worked_example_check.py
+    if ($LASTEXITCODE -ne 0) { throw "worked_example_check.py failed (exit $LASTEXITCODE)" }
     python regression_check.py
+    if ($LASTEXITCODE -ne 0) { throw "regression_check.py failed (exit $LASTEXITCODE)" }
 }
 finally {
     Pop-Location
@@ -36,6 +38,7 @@ if (-not $Official) {
     Push-Location $BenchDir
     try {
         python local_report.py $reportPath
+        if ($LASTEXITCODE -ne 0) { throw "local_report.py failed (exit $LASTEXITCODE)" }
     }
     finally {
         Pop-Location
@@ -55,17 +58,24 @@ Copy-Item (Join-Path $BenchDir "adapters\memora.py") (Join-Path $adapterDir "mem
 
 Push-Location $Official
 try {
+    # Quick L2 self-check, for local iteration only (not scored).
     python self_check.py --adapter adapters.memora:Engine --quick
-    $reportPath = Join-Path $RepoRoot "report.json"
-    python run.py --adapter adapters.memora:Engine --mode fast `
-        --seeds 9999 31415 27182 16180 11235 `
-        --n-services 20 --days 14 `
-        --out $reportPath
+    if ($LASTEXITCODE -ne 0) { throw "self_check.py failed (exit $LASTEXITCODE)" }
+
+    # L3 final bench - the official submission run. Stretch config and
+    # the council seeds are locked inside run.py; do NOT pass --seeds /
+    # --n-services / --days, the harness will reject them.
+    $reportPath = Join-Path $Official "l3_report.json"
+    python run.py --adapter adapters.memora:Engine --out $reportPath
+    if ($LASTEXITCODE -ne 0) { throw "L3 run.py failed (exit $LASTEXITCODE); l3_report.json NOT written, web/public left untouched" }
+
+    # Mirror to repo root for convenience.
+    Copy-Item $reportPath (Join-Path $RepoRoot "report.json") -Force
 
     $webPublic = Join-Path $RepoRoot "web\public"
     if (Test-Path $webPublic) {
         Copy-Item $reportPath (Join-Path $webPublic "benchmark-report.json") -Force
-        Write-Host "Copied benchmark report to web\public\benchmark-report.json"
+        Write-Host "Copied L3 report to web\public\benchmark-report.json"
     }
 }
 finally {
